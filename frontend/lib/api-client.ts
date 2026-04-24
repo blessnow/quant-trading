@@ -1,4 +1,6 @@
-const API_BASE = "/api";
+const API_BASE = typeof window === "undefined"
+  ? `http://${process.env.API_HOST || "localhost:8000"}/api`
+  : "/api";
 
 async function fetchAPI<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
@@ -84,6 +86,16 @@ export interface MarketStatus {
   us_stock: { is_open: boolean; current_time: string; next_open: string };
 }
 
+export interface StrategyLog {
+  id: number;
+  strategy_id: number;
+  strategy_name: string;
+  level: string;
+  message: string;
+  detail: string;
+  created_at: string;
+}
+
 export const api = {
   portfolio: {
     summary: () => fetchAPI<PortfolioSummary>("/portfolio/summary"),
@@ -107,6 +119,10 @@ export const api = {
     ranking: (period = "month") =>
       fetchAPI<{ rankings: Strategy[]; period: string }>(
         `/strategies/ranking?period=${period}`
+      ),
+    logs: (strategyId?: number, limit = 100) =>
+      fetchAPI<{ logs: StrategyLog[]; count: number }>(
+        `/strategies/logs?limit=${limit}${strategyId ? `&strategy_id=${strategyId}` : ""}`
       ),
   },
   trades: {

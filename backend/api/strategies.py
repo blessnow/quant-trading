@@ -125,3 +125,34 @@ async def strategy_ranking(period: str = "month"):
         return {"rankings": rankings, "period": period}
     finally:
         await db.close()
+
+
+@router.get("/logs")
+async def strategy_logs(strategy_id: int = None, limit: int = 100):
+    """策略执行日志"""
+    db = await get_db()
+    try:
+        if strategy_id:
+            async with db.execute(
+                "SELECT id, strategy_id, strategy_name, level, message, detail, created_at "
+                "FROM strategy_logs WHERE strategy_id=? ORDER BY id DESC LIMIT ?",
+                (strategy_id, limit)
+            ) as cur:
+                rows = await cur.fetchall()
+        else:
+            async with db.execute(
+                "SELECT id, strategy_id, strategy_name, level, message, detail, created_at "
+                "FROM strategy_logs ORDER BY id DESC LIMIT ?",
+                (limit,)
+            ) as cur:
+                rows = await cur.fetchall()
+
+        logs = []
+        for r in rows:
+            logs.append({
+                "id": r[0], "strategy_id": r[1], "strategy_name": r[2],
+                "level": r[3], "message": r[4], "detail": r[5], "created_at": r[6],
+            })
+        return {"logs": logs, "count": len(logs)}
+    finally:
+        await db.close()

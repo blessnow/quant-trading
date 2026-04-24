@@ -155,9 +155,14 @@ async def get_summary():
     try:
         result = {"total_value": 0, "daily_pnl": 0, "daily_return_pct": 0, "markets": {}}
         total_value = 0
+        total_initial = 0
 
         for market in ["A_SHARE", "US_STOCK"]:
-            async with db.execute("SELECT cash, initial_capital FROM accounts WHERE market=?", (market,)) as cur:
+            # 汇总该市场所有策略账户
+            async with db.execute(
+                "SELECT COALESCE(SUM(cash), 0), COALESCE(SUM(initial_capital), 0) FROM accounts WHERE strategy_id IS NOT NULL AND market=?",
+                (market,)
+            ) as cur:
                 acct = await cur.fetchone()
             if not acct:
                 continue
@@ -176,6 +181,7 @@ async def get_summary():
 
             mv = cash + market_value
             total_value += mv
+            total_initial += initial
             pnl = mv - initial
 
             # 最新快照
@@ -197,8 +203,8 @@ async def get_summary():
             }
 
         result["total_value"] = round(total_value, 2)
-        result["initial_capital"] = 500000.0
-        result["total_pnl"] = round(total_value - 500000.0, 2)
+        result["initial_capital"] = total_initial
+        result["total_pnl"] = round(total_value - total_initial, 2)
 
         return result
     finally:

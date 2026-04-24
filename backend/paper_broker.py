@@ -51,7 +51,7 @@ class PaperBroker:
                 total_cost = notional + commission
 
                 # 检查资金
-                async with db.execute("SELECT cash FROM accounts WHERE market='A_SHARE'") as cur:
+                async with db.execute("SELECT cash FROM accounts WHERE strategy_id=? AND market='A_SHARE'", (signal.strategy_id,)) as cur:
                     row = await cur.fetchone()
                 if not row or row[0] < total_cost:
                     logger.warning(f"[A股] 资金不足: 需要{total_cost:.0f}, 可用{row[0] if row else 0:.0f}")
@@ -73,8 +73,8 @@ class PaperBroker:
 
                 # 扣资金
                 await db.execute(
-                    "UPDATE accounts SET cash=cash-?, updated_at=? WHERE market='A_SHARE'",
-                    (total_cost, now_cst)
+                    "UPDATE accounts SET cash=cash-?, updated_at=? WHERE strategy_id=? AND market='A_SHARE'",
+                    (total_cost, now_cst, signal.strategy_id)
                 )
 
                 # 记录持仓
@@ -135,8 +135,8 @@ class PaperBroker:
                 # 加资金
                 net_proceeds = notional - commission - stamp_tax
                 await db.execute(
-                    "UPDATE accounts SET cash=cash+?, updated_at=? WHERE market='A_SHARE'",
-                    (net_proceeds, now_cst)
+                    "UPDATE accounts SET cash=cash+?, updated_at=? WHERE strategy_id=? AND market='A_SHARE'",
+                    (net_proceeds, now_cst, signal.strategy_id)
                 )
 
                 # 删持仓
@@ -183,15 +183,15 @@ class PaperBroker:
                 rate = get_usd_cny_rate()
                 total_cost_rmb = total_cost * rate
 
-                async with db.execute("SELECT cash FROM accounts WHERE market='US_STOCK'") as cur:
+                async with db.execute("SELECT cash FROM accounts WHERE strategy_id=? AND market='US_STOCK'", (signal.strategy_id,)) as cur:
                     row = await cur.fetchone()
                 if not row or row[0] < total_cost_rmb:
                     logger.warning(f"[美股] 资金不足: 需要${total_cost:.0f}(¥{total_cost_rmb:.0f}), 可用¥{row[0] if row else 0:.0f}")
                     return None
 
                 await db.execute(
-                    "UPDATE accounts SET cash=cash-?, updated_at=? WHERE market='US_STOCK'",
-                    (total_cost_rmb, now_et)
+                    "UPDATE accounts SET cash=cash-?, updated_at=? WHERE strategy_id=? AND market='US_STOCK'",
+                    (total_cost_rmb, now_et, signal.strategy_id)
                 )
 
                 await db.execute(
@@ -238,8 +238,8 @@ class PaperBroker:
                 net_proceeds_rmb = (notional - commission) * rate
 
                 await db.execute(
-                    "UPDATE accounts SET cash=cash+?, updated_at=? WHERE market='US_STOCK'",
-                    (net_proceeds_rmb, now_et)
+                    "UPDATE accounts SET cash=cash+?, updated_at=? WHERE strategy_id=? AND market='US_STOCK'",
+                    (net_proceeds_rmb, now_et, signal.strategy_id)
                 )
                 await db.execute("DELETE FROM positions WHERE id=?", (pos_id,))
 

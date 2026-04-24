@@ -266,3 +266,135 @@ def get_index_history(symbol: str = "sz399006", days: int = 90) -> list[dict]:
     except Exception as e:
         logger.error(f"获取指数 {symbol} 历史失败: {e}")
         return []
+
+
+def get_zt_pool(date_str: str = None) -> pd.DataFrame:
+    """获取涨停池数据，含连板数/所属行业/换手率等"""
+    if date_str is None:
+        from datetime import datetime
+        date_str = datetime.now().strftime("%Y%m%d")
+    try:
+        df = _retry(lambda: ak.stock_zt_pool_em(date=date_str))
+        if df is None or df.empty:
+            return pd.DataFrame()
+        df = df.rename(columns={
+            "代码": "code", "名称": "name", "涨跌幅": "change_pct",
+            "最新价": "price", "成交额": "amount", "流通市值": "circ_mv",
+            "总市值": "total_mv", "换手率": "turnover", "封板资金": "seal_fund",
+            "首次封板时间": "first_seal_time", "最后封板时间": "last_seal_time",
+            "炸板次数": "bomb_count", "涨停统计": "zt_stat",
+            "连板数": "consecutive_boards", "所属行业": "industry",
+        })
+        keep = ["code", "name", "change_pct", "price", "amount", "circ_mv",
+                "turnover", "seal_fund", "first_seal_time", "last_seal_time",
+                "bomb_count", "consecutive_boards", "industry"]
+        for c in keep:
+            if c not in df.columns:
+                df[c] = 0
+        df = df[keep].copy()
+        df["code"] = df["code"].astype(str)
+        for num_col in ["change_pct", "price", "amount", "turnover", "seal_fund",
+                         "bomb_count", "consecutive_boards"]:
+            df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
+        logger.info(f"[涨停池] {date_str} 获取 {len(df)} 只涨停股")
+        return df
+    except Exception as e:
+        logger.warning(f"获取涨停池失败: {e}")
+        return pd.DataFrame()
+
+
+def get_industry_board_ranking() -> pd.DataFrame:
+    """获取行业板块排名"""
+    try:
+        df = _retry(ak.stock_board_industry_name_em)
+        if df is None or df.empty:
+            return pd.DataFrame()
+        df = df.rename(columns={
+            "板块名称": "name", "涨跌幅": "change_pct",
+            "上涨家数": "up_count", "下跌家数": "down_count",
+            "领涨股票": "leading_stock", "领涨股票-涨跌幅": "leading_change",
+        })
+        keep = ["name", "change_pct", "up_count", "down_count",
+                "leading_stock", "leading_change"]
+        for c in keep:
+            if c not in df.columns:
+                df[c] = 0
+        df = df[keep].copy()
+        for num_col in ["change_pct", "up_count", "down_count", "leading_change"]:
+            df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
+        df = df.sort_values("change_pct", ascending=False).reset_index(drop=True)
+        logger.info(f"[行业板块] 获取 {len(df)} 个行业排名")
+        return df
+    except Exception as e:
+        logger.warning(f"获取行业板块排名失败: {e}")
+        return pd.DataFrame()
+
+
+def get_emotion_indicators(zt_pool: pd.DataFrame = None,
+                           quotes: pd.DataFrame = None) -> dict:
+    """计算情绪指标并判定情绪周期阶段"""
+    if zt_pool is None:
+        zt_pool = get_zt_pool()
+    if quotes is None:
+        quotes = get_realtime_quotes()
+
+    zt_count = len(zt_pool) if not zt_pool.empty else 0
+
+    dt_count = 0
+    if not quotes.empty:
+        dt_mask = quotes["change_pct"] <= -9.5
+        dt_count = int(dt_mask.sum())
+
+    max_boards = 0
+    avg_boards = 0.0
+    bomb_rate = 0.0
+    total_seal_fund = 0.0
+    if not zt_pool.empty:
+        max_boards = int(zt_pool["consecutive_boards"].max())
+        avg_boards = float(zt_pool["consecutive_boards"].mean())
+        bombed = (zt_pool["bomb_count"] > 0).sum()
+        bomb_rate = round(bombed / len(zt_pool) * 100, 1) if len(zt_pool) > 0 else 0
+        total_seal_fund = float(zt_pool["seal_fund"].sum())
+
+    # 涨停溢价率：需要前日涨停池对比今日涨幅（简化用当前涨停池的change_pct均值）
+    zt_premium = 0.0
+    if not zt_pool.empty and zt_pool["change_pct"].mean() > 0:
+        zt_premium = round(float(zt_pool["change_pct"].mean()), 2)
+
+    # 连板晋级率：连板>=2的比例
+    upgrade_rate = 0.0
+    if not zt_pool.empty and zt_pool["consecutive_boards"].max() > 1:
+        multi = (zt_pool["consecutive_boards"] >= 2).sum()
+        upgrade_rate = round(multi / len(zt_pool) * 100, 1)
+
+    # 判定情绪阶段
+    stage = _classify_emotion_stage(zt_count, dt_count, max_boards, bomb_rate, upgrade_rate)
+
+    return {
+        "zt_count": zt_count,
+        "dt_count": dt_count,
+        "max_boards": max_boards,
+        "avg_boards": round(avg_boards, 1),
+        "bomb_rate": bomb_rate,
+        "total_seal_fund": round(total_seal_fund, 2),
+        "zt_premium": zt_premium,
+        "upgrade_rate": upgrade_rate,
+        "stage": stage,
+    }
+
+
+def _classify_emotion_stage(zt_count: int, dt_count: int,
+                             max_boards: int, bomb_rate: float,
+                             upgrade_rate: float) -> str:
+    """四阶段情绪周期判定"""
+    # 退潮：炸板率>40% 或 跌停>涨停 或 连板骤降
+    if bomb_rate > 40 or dt_count > zt_count or (zt_count > 0 and max_boards <= 1):
+        return "退潮"
+    # 高潮：涨停>80 且 连板>5 且 升级率高
+    if zt_count > 80 and max_boards >= 5 and upgrade_rate > 25:
+        return "高潮"
+    # 发酵：涨停30-80, 连板梯队展开, 炸板率低
+    if zt_count >= 30 and max_boards >= 3 and bomb_rate < 30:
+        return "发酵"
+    # 冰点/启动
+    return "启动"

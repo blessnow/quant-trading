@@ -25,30 +25,24 @@ class RiskManager:
         """策略级预检：是否允许该策略运行"""
         db = await get_db()
         try:
-            # 1. 组合级回撤检查
-            async with db.execute("SELECT market FROM accounts") as cur:
-                pass
+            market = context.market.value if isinstance(context.market, Market) else context.market
 
-            for market in ["A_SHARE", "US_STOCK"]:
-                async with db.execute(
-                    """SELECT total_value FROM equity_snapshots
-                       WHERE market=? ORDER BY snapshot_date DESC, snapshot_time DESC LIMIT 1""",
-                    (market,)
-                ) as cur:
-                    row = await cur.fetchone()
-                if row:
-                    async with db.execute("SELECT initial_capital FROM accounts WHERE market=?", (market,)) as cur2:
-                        init_row = await cur2.fetchone()
-                    if init_row:
-                        peak = row[0]
-                        initial = init_row[0]
-                        # 简化：用初始资金作为峰值基准
-                        if initial > 0:
-                            drawdown = (initial - peak) / initial
-                            if drawdown > config.RISK_PORTFOLIO_DRAWDOWN_LIMIT:
-                                await self._log_risk_event("PORTFOLIO_HALT", strategy_id,
-                                                           f"{market}组合回撤{drawdown:.1%}超限，暂停交易")
-                                return RiskDecision(False, f"{market}组合回撤超限{drawdown:.1%}")
+            # 1. 策略级回撤检查
+            async with db.execute(
+                "SELECT initial_capital FROM accounts WHERE strategy_id=? AND market=?",
+                (strategy_id, market)
+            ) as cur2:
+                init_row = await cur2.fetchone()
+            if init_row and init_row[0] > 0:
+                # 简化：用策略初始资金作为基准，对比当前持仓+现金
+                strategy_cash = context.account_cash
+                strategy_position_value = sum(p.shares * (p.current_price or p.avg_cost) for p in context.current_positions if p.strategy_id == strategy_id)
+                current_total = strategy_cash + strategy_position_value
+                drawdown = (init_row[0] - current_total) / init_row[0]
+                if drawdown > config.RISK_STRATEGY_DRAWDOWN_LIMIT:
+                    await self._log_risk_event("STRATEGY_HALT", strategy_id,
+                                               f"策略回撤{drawdown:.1%}超限，暂停交易")
+                    return RiskDecision(False, f"策略回撤超限{drawdown:.1%}")
 
             # 2. 策略级连续亏损检查
             async with db.execute(
@@ -69,13 +63,13 @@ class RiskManager:
                                                f"连续亏损{consecutive_losses}次，暂停1天")
                     return RiskDecision(False, f"连续亏损{consecutive_losses}次")
 
-            # 3. 持仓数量限制
-            async with db.execute("SELECT COUNT(*) FROM positions") as cur:
+            # 3. 策略持仓数量限制
+            async with db.execute("SELECT COUNT(*) FROM positions WHERE strategy_id=?", (strategy_id,)) as cur:
                 row = await cur.fetchone()
             if row and row[0] >= config.RISK_MAX_POSITIONS:
                 await self._log_risk_event("POSITION_LIMIT", strategy_id,
-                                           f"持仓数{row[0]}达上限{config.RISK_MAX_POSITIONS}")
-                return RiskDecision(False, f"持仓数已达上限{config.RISK_MAX_POSITIONS}")
+                                           f"策略持仓数{row[0]}达上限{config.RISK_MAX_POSITIONS}")
+                return RiskDecision(False, f"策略持仓数已达上限{config.RISK_MAX_POSITIONS}")
 
             return RiskDecision(True)
         finally:
@@ -86,12 +80,15 @@ class RiskManager:
         db = await get_db()
         try:
             if signal.signal_type == SignalType.BUY:
-                # 仓位占比检查
+                # 仓位占比检查 — 基于策略专属账户
                 market = signal.market.value if isinstance(signal.market, Market) else signal.market
-                async with db.execute("SELECT cash, initial_capital FROM accounts WHERE market=?", (market,)) as cur:
+                async with db.execute(
+                    "SELECT cash, initial_capital FROM accounts WHERE strategy_id=? AND market=?",
+                    (signal.strategy_id, market)
+                ) as cur:
                     row = await cur.fetchone()
                 if not row:
-                    return RiskDecision(False, "账户不存在")
+                    return RiskDecision(False, "策略账户不存在")
 
                 cash, total = row
                 position_value = signal.price * signal.shares

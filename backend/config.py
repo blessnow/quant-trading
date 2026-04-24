@@ -12,6 +12,7 @@ DB_PATH = os.path.join(DATA_DIR, "quant.db")
 # 初始资金（单位：RMB）
 INITIAL_CAPITAL_A_SHARE = 500_000.0
 INITIAL_CAPITAL_US_STOCK = 500_000.0
+INITIAL_CAPITAL_PER_STRATEGY = 500_000.0  # 每个策略独立资金
 USD_CNY_RATE = 7.25  # 默认汇率，运行时更新
 
 # A股交易规则

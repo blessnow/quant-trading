@@ -1,15 +1,18 @@
 """数据库初始化和连接管理"""
 import aiosqlite
-from config import DB_PATH, DATA_DIR, INITIAL_CAPITAL_A_SHARE, INITIAL_CAPITAL_US_STOCK
+from config import DB_PATH, DATA_DIR, INITIAL_CAPITAL_A_SHARE, INITIAL_CAPITAL_US_STOCK, INITIAL_CAPITAL_PER_STRATEGY
 import os
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS accounts (
     id          INTEGER PRIMARY KEY,
-    market      TEXT NOT NULL UNIQUE,
+    strategy_id INTEGER,
+    market      TEXT NOT NULL,
     initial_capital REAL NOT NULL DEFAULT 0,
     cash        REAL NOT NULL DEFAULT 0,
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(strategy_id, market),
+    FOREIGN KEY (strategy_id) REFERENCES strategies(id)
 );
 
 CREATE TABLE IF NOT EXISTS strategies (
@@ -160,6 +163,16 @@ CREATE TABLE IF NOT EXISTS benchmark_snapshots (
     UNIQUE(symbol, snapshot_date)
 );
 
+CREATE TABLE IF NOT EXISTS strategy_logs (
+    id          INTEGER PRIMARY KEY,
+    strategy_id INTEGER NOT NULL,
+    strategy_name TEXT NOT NULL,
+    level       TEXT NOT NULL DEFAULT 'info',
+    message     TEXT NOT NULL,
+    detail      TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS articles (
     id          INTEGER PRIMARY KEY,
     title       TEXT NOT NULL,
@@ -187,13 +200,52 @@ async def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(SCHEMA_SQL)
-        # 初始化账户
+
+        # 迁移：检查旧 accounts 表是否没有 strategy_id 列
+        try:
+            async with db.execute("SELECT strategy_id FROM accounts LIMIT 1") as cur:
+                await cur.fetchone()
+        except aiosqlite.OperationalError:
+            # 旧表，需要迁移
+            await db.execute("ALTER TABLE accounts RENAME TO accounts_old")
+            await db.execute("""
+                CREATE TABLE accounts (
+                    id          INTEGER PRIMARY KEY,
+                    strategy_id INTEGER,
+                    market      TEXT NOT NULL,
+                    initial_capital REAL NOT NULL DEFAULT 0,
+                    cash        REAL NOT NULL DEFAULT 0,
+                    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(strategy_id, market),
+                    FOREIGN KEY (strategy_id) REFERENCES strategies(id)
+                )
+            """)
+            # 旧市场级账户作为 strategy_id=NULL 的汇总账户保留
+            await db.execute("""
+                INSERT INTO accounts (strategy_id, market, initial_capital, cash, updated_at)
+                SELECT NULL, market, initial_capital, cash, updated_at FROM accounts_old
+            """)
+            await db.execute("DROP TABLE accounts_old")
+            import logging
+            logging.info("[数据库] accounts 表迁移完成：新增 strategy_id 列")
+
+        # 初始化市场级汇总账户（strategy_id=NULL）
         await db.execute(
-            "INSERT OR IGNORE INTO accounts (market, initial_capital, cash) VALUES (?, ?, ?)",
-            ("A_SHARE", INITIAL_CAPITAL_A_SHARE, INITIAL_CAPITAL_A_SHARE)
+            "INSERT OR IGNORE INTO accounts (strategy_id, market, initial_capital, cash) VALUES (?, ?, ?, ?)",
+            (None, "A_SHARE", INITIAL_CAPITAL_A_SHARE, INITIAL_CAPITAL_A_SHARE)
         )
         await db.execute(
-            "INSERT OR IGNORE INTO accounts (market, initial_capital, cash) VALUES (?, ?, ?)",
-            ("US_STOCK", INITIAL_CAPITAL_US_STOCK, INITIAL_CAPITAL_US_STOCK)
+            "INSERT OR IGNORE INTO accounts (strategy_id, market, initial_capital, cash) VALUES (?, ?, ?, ?)",
+            (None, "US_STOCK", INITIAL_CAPITAL_US_STOCK, INITIAL_CAPITAL_US_STOCK)
         )
+
+        # 为每个已注册策略创建独立账户
+        async with db.execute("SELECT id, market FROM strategies") as cur:
+            strategies = await cur.fetchall()
+        for sid, market in strategies:
+            await db.execute(
+                "INSERT OR IGNORE INTO accounts (strategy_id, market, initial_capital, cash) VALUES (?, ?, ?, ?)",
+                (sid, market, INITIAL_CAPITAL_PER_STRATEGY, INITIAL_CAPITAL_PER_STRATEGY)
+            )
+
         await db.commit()

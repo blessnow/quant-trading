@@ -113,9 +113,10 @@ async def broadcast(data: dict):
 
 
 async def _register_strategies_to_db():
-    """将自动发现的策略同步到数据库"""
+    """将自动发现的策略同步到数据库，并为每个策略创建独立账户"""
     from database import get_db
     from strategies.registry import all_strategies
+    import config
 
     db = await get_db()
     try:
@@ -130,6 +131,18 @@ async def _register_strategies_to_db():
                 (name, display_name, market, "", json.dumps(defaults))
             )
         await db.commit()
+
+        # 为每个策略创建独立账户
+        async with db.execute("SELECT id, market FROM strategies") as cur:
+            strategies = await cur.fetchall()
+        for sid, market in strategies:
+            await db.execute(
+                """INSERT OR IGNORE INTO accounts (strategy_id, market, initial_capital, cash)
+                   VALUES (?, ?, ?, ?)""",
+                (sid, market, config.INITIAL_CAPITAL_PER_STRATEGY, config.INITIAL_CAPITAL_PER_STRATEGY)
+            )
+        await db.commit()
+        logger.info(f"[启动] 为 {len(strategies)} 个策略创建独立账户，每个 {config.INITIAL_CAPITAL_PER_STRATEGY:.0f} 元")
     finally:
         await db.close()
 

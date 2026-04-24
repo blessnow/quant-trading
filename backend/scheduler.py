@@ -34,6 +34,7 @@ def _run(coro):
 async def run_strategy(strategy_name: str):
     """运行单个策略的完整流程"""
     db = await get_db()
+    strategy_id = 0
     try:
         async with db.execute(
             "SELECT id, name, params_json, is_active, market FROM strategies WHERE name=?",
@@ -41,7 +42,6 @@ async def run_strategy(strategy_name: str):
         ) as cur:
             row = await cur.fetchone()
         if not row or not row[3]:
-            logger.debug(f"[调度] 策略 {strategy_name} 未注册或未激活")
             return
 
         strategy_id, name, params_json, _, market = row
@@ -49,17 +49,16 @@ async def run_strategy(strategy_name: str):
 
         strategy_cls = all_strategies().get(strategy_name)
         if not strategy_cls:
-            logger.warning(f"[调度] 未找到策略类: {strategy_name}")
             return
 
         strategy = strategy_cls(strategy_id, params)
 
-        # 构建市场上下文
-        async with db.execute("SELECT cash FROM accounts WHERE market=?", (market,)) as cur:
+        # 构建市场上下文 — 查询策略专属账户
+        async with db.execute("SELECT cash FROM accounts WHERE strategy_id=? AND market=?", (strategy_id, market)) as cur:
             acct = await cur.fetchone()
         async with db.execute(
             "SELECT id, strategy_id, symbol, market, name, shares, avg_cost, buy_date, sellable_date, current_price "
-            "FROM positions WHERE market=?", (market,)
+            "FROM positions WHERE strategy_id=?", (strategy_id,)
         ) as cur:
             pos_rows = await cur.fetchall()
 
@@ -83,22 +82,35 @@ async def run_strategy(strategy_name: str):
         # 风控预检
         decision = await risk_mgr.pre_check(strategy_id, context)
         if not decision:
-            logger.warning(f"[调度] {strategy_name} 被风控拦截: {decision.reason}")
+            await _write_log(db, strategy_id, strategy_name, "warn", "风控拦截", decision.reason)
             return
 
         # 生成信号
         signals = strategy.generate_signals(context)
+
+        # 提取信号中的 LLM 分析摘要
+        analysis = ""
+        for s in signals:
+            if s.metadata and s.metadata.get("analysis"):
+                analysis = s.metadata["analysis"]
+                break
+        if not analysis and hasattr(strategy, '_last_analysis') and strategy._last_analysis:
+            analysis = strategy._last_analysis
+
         if not signals:
-            logger.info(f"[调度] {strategy_name} 无信号")
+            await _write_log(db, strategy_id, strategy_name, "info", "无信号",
+                             f"持仓{len(positions)}只, 现金{context.account_cash:.0f}" +
+                             (f"\n分析: {analysis[:500]}" if analysis else ""))
             return
 
         # 执行信号
         executed = []
+        rejected = []
         for signal in signals:
             signal.strategy_id = strategy_id
             validation = await risk_mgr.validate_signal(signal, context)
             if not validation:
-                logger.warning(f"[调度] 信号被拦截: {validation.reason}")
+                rejected.append(f"{signal.symbol} {validation.reason}")
                 continue
             if validation.adjusted_shares > 0:
                 signal.shares = validation.adjusted_shares
@@ -111,21 +123,48 @@ async def run_strategy(strategy_name: str):
         await risk_mgr.post_check(strategy_id, executed)
         strategy.on_execution_report(executed)
 
-        logger.info(f"[调度] {strategy_name} 执行完成，成交{len(executed)}笔")
+        # 写执行日志
+        detail_parts = [f"信号{len(signals)}个, 成交{len(executed)}笔"]
+        if rejected:
+            detail_parts.append(f"拦截: {'; '.join(rejected[:3])}")
+        for t in executed:
+            detail_parts.append(f"{'买入' if t.side.value == 'BUY' else '卖出'} {t.symbol} {t.shares}股@{t.price}")
+        level = "info" if executed else "warn"
+        await _write_log(db, strategy_id, strategy_name, level, f"执行完成，成交{len(executed)}笔", "; ".join(detail_parts))
 
     except Exception as e:
         import traceback
-        logger.error(f"[调度异常] {strategy_name}: {e}\n{traceback.format_exc()}")
+        tb = traceback.format_exc()
+        logger.error(f"[调度异常] {strategy_name}: {e}\n{tb}")
+        if strategy_id:
+            await _write_log(db, strategy_id, strategy_name, "error", f"异常: {e}", tb[:500])
     finally:
         await db.close()
 
 
+async def _write_log(db, strategy_id: int, strategy_name: str,
+                     level: str, message: str, detail: str = ""):
+    """写入策略执行日志"""
+    try:
+        await db.execute(
+            "INSERT INTO strategy_logs (strategy_id, strategy_name, level, message, detail) VALUES (?, ?, ?, ?, ?)",
+            (strategy_id, strategy_name, level, message, detail),
+        )
+        await db.commit()
+    except Exception:
+        pass
+
+
 async def snapshot_equity():
-    """净值快照：市场级 + 策略级 + 基准指数"""
+    """净值快照：市场级汇总 + 策略级 + 基准指数"""
     db = await get_db()
     try:
         for market in ["A_SHARE", "US_STOCK"]:
-            async with db.execute("SELECT cash, initial_capital FROM accounts WHERE market=?", (market,)) as cur:
+            # 汇总该市场所有策略账户的现金
+            async with db.execute(
+                "SELECT COALESCE(SUM(cash), 0), COALESCE(SUM(initial_capital), 0) FROM accounts WHERE strategy_id IS NOT NULL AND market=?",
+                (market,)
+            ) as cur:
                 acct = await cur.fetchone()
             if not acct:
                 continue
@@ -175,6 +214,13 @@ async def snapshot_equity():
         async with db.execute("SELECT id, name, market FROM strategies WHERE is_active=1") as cur:
             strategy_rows = await cur.fetchall()
         for sid, sname, smarket in strategy_rows:
+            # 策略专属账户现金
+            async with db.execute(
+                "SELECT cash FROM accounts WHERE strategy_id=? AND market=?", (sid, smarket)
+            ) as cur:
+                s_acct = await cur.fetchone()
+            s_cash = s_acct[0] if s_acct else 0
+
             invested = 0.0
             market_value = 0.0
             async with db.execute(
@@ -189,6 +235,7 @@ async def snapshot_equity():
                     from data.us_stock_provider import get_usd_cny_rate
                     price = price * get_usd_cny_rate()
                 market_value += shares * price
+            total_value = s_cash + market_value
             unrealized = market_value - invested
             s_daily_return = 0.0
             async with db.execute(
@@ -198,7 +245,7 @@ async def snapshot_equity():
             ) as cur:
                 sprev = await cur.fetchone()
             if sprev and sprev[0] > 0:
-                s_daily_return = round((market_value - sprev[0]) / sprev[0] * 100, 4)
+                s_daily_return = round((total_value - sprev[0]) / sprev[0] * 100, 4)
 
             today = get_today_str(smarket)
             now = datetime.now(CST if smarket == "A_SHARE" else ET)
@@ -206,7 +253,7 @@ async def snapshot_equity():
                 """INSERT OR REPLACE INTO strategy_equity_snapshots
                    (strategy_id, total_value, invested, unrealized_pnl, daily_return_pct, snapshot_date, snapshot_time)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (sid, round(market_value, 2), round(invested, 2), round(unrealized, 2),
+                (sid, round(total_value, 2), round(invested, 2), round(unrealized, 2),
                  s_daily_return, today, now.strftime("%H:%M"))
             )
 
@@ -431,96 +478,95 @@ def setup_jobs():
     # ========== A股 ==========
     # 盘前选股（9:00）— 多因子策略选股列表
     scheduler.add_job(
-        lambda: _run(run_strategy("MultiFactorDaily")),
-        CronTrigger(hour=9, minute=0, timezone=CST, day_of_week="mon-fri"),
+        run_strategy, "cron", hour=9, minute=0, timezone=CST, day_of_week="mon-fri",
+        args=["MultiFactorDaily"],
         id="a_share_multi_factor", replace_existing=True, misfire_grace_time=300,
     )
     # 盘中高频扫描（每10分钟）— 涨停预判
     scheduler.add_job(
-        lambda: _run(run_strategy("LimitUpPredictor")),
-        CronTrigger(minute="*/10", hour="9-14", timezone=CST, day_of_week="mon-fri"),
+        run_strategy, "cron", minute="*/10", hour="9-14", timezone=CST, day_of_week="mon-fri",
+        args=["LimitUpPredictor"],
         id="a_share_limit_up", replace_existing=True, misfire_grace_time=60,
     )
     # 盘中高频扫描（每30分钟）— 事件套利
     scheduler.add_job(
-        lambda: _run(run_strategy("EventArbitrage")),
-        CronTrigger(minute="*/30", hour="9-14", timezone=CST, day_of_week="mon-fri"),
+        run_strategy, "cron", minute="*/30", hour="9-14", timezone=CST, day_of_week="mon-fri",
+        args=["EventArbitrage"],
         id="a_share_event", replace_existing=True, misfire_grace_time=120,
+    )
+    # 陈小群短线龙头 — 盘中快速扫描（每10分钟）
+    scheduler.add_job(
+        run_strategy, "cron", minute="*/10", hour="9-14", timezone=CST, day_of_week="mon-fri",
+        args=["ChenXiaoqunShort"],
+        id="chen_xiaoqun_intraday", replace_existing=True, misfire_grace_time=120,
     )
     # T+1卖出
     scheduler.add_job(
-        lambda: _run(sell_a_share_pending()),
-        CronTrigger(hour=9, minute=35, timezone=CST, day_of_week="mon-fri"),
+        sell_a_share_pending, "cron", hour=9, minute=35, timezone=CST, day_of_week="mon-fri",
         id="a_share_sell", replace_existing=True, misfire_grace_time=300,
     )
     # 收盘快照
     scheduler.add_job(
-        lambda: _run(snapshot_equity()),
-        CronTrigger(hour=15, minute=5, timezone=CST, day_of_week="mon-fri"),
+        snapshot_equity, "cron", hour=15, minute=5, timezone=CST, day_of_week="mon-fri",
         id="a_share_snapshot", replace_existing=True, misfire_grace_time=300,
     )
 
     # ========== 美股 ==========
     # 开盘扫描（9:35 ET）— 跳空扫描
     scheduler.add_job(
-        lambda: _run(run_strategy("GapScanner")),
-        CronTrigger(hour=9, minute=35, timezone=ET, day_of_week="mon-fri"),
+        run_strategy, "cron", hour=9, minute=35, timezone=ET, day_of_week="mon-fri",
+        args=["GapScanner"],
         id="us_gap", replace_existing=True, misfire_grace_time=300,
     )
     # 盘中高频扫描（每10分钟）— 动量突破
     scheduler.add_job(
-        lambda: _run(run_strategy("MomentumBreakout")),
-        CronTrigger(minute="*/10", hour="9-15", timezone=ET, day_of_week="mon-fri"),
+        run_strategy, "cron", minute="*/10", hour="9-15", timezone=ET, day_of_week="mon-fri",
+        args=["MomentumBreakout"],
         id="us_momentum", replace_existing=True, misfire_grace_time=60,
     )
     # 盘中高频扫描（每15分钟）— 均值回归
     scheduler.add_job(
-        lambda: _run(run_strategy("MeanReversion")),
-        CronTrigger(minute="*/15", hour="10-15", timezone=ET, day_of_week="mon-fri"),
+        run_strategy, "cron", minute="*/15", hour="10-15", timezone=ET, day_of_week="mon-fri",
+        args=["MeanReversion"],
         id="us_mean_reversion", replace_existing=True, misfire_grace_time=60,
     )
     # 收盘快照
     scheduler.add_job(
-        lambda: _run(snapshot_equity()),
-        CronTrigger(hour=16, minute=5, timezone=ET, day_of_week="mon-fri"),
+        snapshot_equity, "cron", hour=16, minute=5, timezone=ET, day_of_week="mon-fri",
         id="us_snapshot", replace_existing=True, misfire_grace_time=300,
     )
 
     # ========== 实时行情 + 盘中快照 + 持仓监控 ==========
     # A股盘中每2分钟更新持仓价格
     scheduler.add_job(
-        lambda: _run(update_positions_realtime("A_SHARE")),
-        CronTrigger(minute="*/2", hour="9-14", timezone=CST, day_of_week="mon-fri"),
+        update_positions_realtime, "cron", minute="*/2", hour="9-14", timezone=CST, day_of_week="mon-fri",
+        args=["A_SHARE"],
         id="a_share_realtime", replace_existing=True, misfire_grace_time=60,
     )
     # 美股盘中每2分钟更新持仓价格
     scheduler.add_job(
-        lambda: _run(update_positions_realtime("US_STOCK")),
-        CronTrigger(minute="*/2", hour="9-15", timezone=ET, day_of_week="mon-fri"),
+        update_positions_realtime, "cron", minute="*/2", hour="9-15", timezone=ET, day_of_week="mon-fri",
+        args=["US_STOCK"],
         id="us_stock_realtime", replace_existing=True, misfire_grace_time=60,
     )
     # A股盘中快照（每30分钟）
     scheduler.add_job(
-        lambda: _run(snapshot_equity()),
-        CronTrigger(minute="0,30", hour="9-14", timezone=CST, day_of_week="mon-fri"),
+        snapshot_equity, "cron", minute="0,30", hour="9-14", timezone=CST, day_of_week="mon-fri",
         id="a_share_intraday_snap", replace_existing=True, misfire_grace_time=120,
     )
     # 美股盘中快照（每30分钟）
     scheduler.add_job(
-        lambda: _run(snapshot_equity()),
-        CronTrigger(minute="0,30", hour="9-15", timezone=ET, day_of_week="mon-fri"),
+        snapshot_equity, "cron", minute="0,30", hour="9-15", timezone=ET, day_of_week="mon-fri",
         id="us_stock_intraday_snap", replace_existing=True, misfire_grace_time=120,
     )
     # A股持仓监控（每3分钟：止损/止盈）
     scheduler.add_job(
-        lambda: _run(monitor_positions()),
-        CronTrigger(minute="*/3", hour="9-14", timezone=CST, day_of_week="mon-fri"),
+        monitor_positions, "cron", minute="*/3", hour="9-14", timezone=CST, day_of_week="mon-fri",
         id="a_share_monitor", replace_existing=True, misfire_grace_time=60,
     )
     # 美股持仓监控（每3分钟：止损/止盈）
     scheduler.add_job(
-        lambda: _run(monitor_positions()),
-        CronTrigger(minute="*/3", hour="9-15", timezone=ET, day_of_week="mon-fri"),
+        monitor_positions, "cron", minute="*/3", hour="9-15", timezone=ET, day_of_week="mon-fri",
         id="us_stock_monitor", replace_existing=True, misfire_grace_time=60,
     )
 
