@@ -383,6 +383,262 @@ def get_emotion_indicators(zt_pool: pd.DataFrame = None,
     }
 
 
+def _em_prefix(code: str) -> str:
+    """A股代码转东方财富前缀 SH/SE"""
+    code = str(code).strip()
+    if code.startswith("6") or code.startswith("9"):
+        return "SH"
+    return "SZ"
+
+
+def get_stock_fundamentals(code: str) -> dict:
+    """获取个股基本面数据：公司信息、财务指标、前十大股东（东方财富接口）"""
+    result = {"code": code}
+    prefix = _em_prefix(code)
+    em_code = f"{prefix}{code}"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://emweb.securities.eastmoney.com",
+    }
+
+    # 1. 公司概况
+    try:
+        r = requests.get(
+            f"https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/PageAjax?code={em_code}",
+            headers=headers, timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            jbzl = data.get("jbzl", [])
+            if jbzl:
+                row = jbzl[0]
+                result["股票简称"] = row.get("SECURITY_NAME_ABBR", "")
+                result["公司全称"] = row.get("ORG_NAME", "")
+                result["英文名称"] = row.get("ORG_NAME_EN", "")
+                result["行业"] = row.get("INDUSTRYCSRC1", "")
+            fxxg = data.get("fxxg", [])
+            if fxxg:
+                row = fxxg[0]
+                result["上市日期"] = str(row.get("LISTING_DATE", ""))[:10]
+                result["成立日期"] = str(row.get("FOUND_DATE", ""))[:10]
+            bydt = data.get("bydt", [])
+            if bydt:
+                row = bydt[0]
+                result["行业"] = row.get("EM_INDUSTRY", "")
+                result["主营业务"] = row.get("RANGE", "")
+                result["经营范围"] = row.get("BUSINESS_SCOPE", "")
+                result["公司简介"] = row.get("ORG_PROFILE", "")
+    except Exception as e:
+        logger.debug(f"[东方财富] {code} 公司概况失败: {e}")
+
+    # 2. 主要财务指标（最近5期）
+    try:
+        r = requests.get(
+            f"https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code={em_code}",
+            headers=headers, timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict):
+                data = data.get("data", [])
+            if isinstance(data, list) and data:
+                financials = []
+                for item in data[:5]:
+                    report_date = str(item.get("REPORT_DATE", ""))[:10]
+                    eps = item.get("EPSJB") or item.get("EPSXS")
+                    bps = item.get("BPS") or item.get("MGJZC")
+                    revenue = item.get("TOTAL_OPERATE_INCOME") or item.get("TOTALOPERATEREVE")
+                    net_profit = item.get("PARENT_NETPROFIT") or item.get("PARENTNETPROFIT")
+                    roe = item.get("WEIGHTAVG_ROE")
+                    revenue_growth = item.get("TOTALOPERATEREVETZ")
+                    profit_growth = item.get("PARENTNETPROFITTZ")
+                    gross_margin = item.get("XSMLL")
+                    debt_ratio = item.get("ZCFZL")
+                    ocf_per_share = item.get("MGJYXJJE")
+
+                    financials.append({
+                        "report_date": report_date,
+                        "report_name": item.get("REPORT_DATE_NAME", ""),
+                        "eps": _safe_float(eps),
+                        "bps": _safe_float(bps),
+                        "revenue": _safe_float(revenue, div=1e8),
+                        "net_profit": _safe_float(net_profit, div=1e8),
+                        "roe": _safe_float(roe),
+                        "revenue_growth_pct": _safe_float(revenue_growth),
+                        "profit_growth_pct": _safe_float(profit_growth),
+                        "gross_margin_pct": _safe_float(gross_margin),
+                        "debt_ratio_pct": _safe_float(debt_ratio),
+                        "ocf_per_share": _safe_float(ocf_per_share),
+                    })
+                result["financials"] = financials
+    except Exception as e:
+        logger.debug(f"[东方财富] {code} 财务指标失败: {e}")
+
+    # 3. 前十大股东
+    try:
+        r = requests.get(
+            f"https://emweb.securities.eastmoney.com/PC_HSF10/ShareholderResearch/PageAjax?code={em_code}",
+            headers=headers, timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            sdgd = data.get("sdgd", [])
+            if sdgd:
+                top_holders = []
+                for item in sdgd[:10]:
+                    top_holders.append({
+                        "rank": item.get("HOLDER_RANK", ""),
+                        "name": item.get("HOLDER_NAME", ""),
+                        "type": item.get("HOLDER_TYPE", ""),
+                        "shares": item.get("HOLD_NUM", ""),
+                        "ratio": item.get("HOLD_NUM_RATIO", ""),
+                    })
+                result["top_holders"] = top_holders
+
+            # 实际控制人
+            sjkzr = data.get("sjkzr", [])
+            if sjkzr:
+                result["实际控制人"] = sjkzr[0].get("HOLDER_NAME", "")
+    except Exception as e:
+        logger.debug(f"[东方财富] {code} 股东信息失败: {e}")
+
+    logger.info(f"[基本面] {code} 基本面数据获取完成")
+    return result
+
+
+def get_pb_ratio(code: str) -> dict:
+    """获取个股市净率PB、市盈率PE等估值指标（东方财富接口）"""
+    result = {"code": code}
+    prefix = _em_prefix(code)
+    em_code = f"{prefix}{code}"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://emweb.securities.eastmoney.com",
+    }
+
+    # 公司概况拿名称和行业
+    try:
+        r = requests.get(
+            f"https://emweb.securities.eastmoney.com/PC_HSF10/CompanySurvey/PageAjax?code={em_code}",
+            headers=headers, timeout=10,
+        )
+        if r.status_code == 200:
+            jbzl = r.json().get("jbzl", [])
+            if jbzl:
+                result["股票简称"] = jbzl[0].get("SECURITY_NAME_ABBR", "")
+    except Exception:
+        pass
+
+    # 当前价格
+    price = get_current_price(code)
+    if price and price > 0:
+        result["current_price"] = price
+
+    # 财务指标拿BPS(每股净资产)和EPS
+    try:
+        r = requests.get(
+            f"https://emweb.securities.eastmoney.com/PC_HSF10/NewFinanceAnalysis/ZYZBAjaxNew?type=0&code={em_code}",
+            headers=headers, timeout=10,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, dict):
+                data = data.get("data", [])
+            if isinstance(data, list) and data:
+                latest = data[0]
+                bps = _safe_float(latest.get("BPS") or latest.get("MGJZC"))
+                eps = _safe_float(latest.get("EPSJB") or latest.get("EPSXS"))
+
+                if bps and bps > 0:
+                    result["book_value_per_share"] = bps
+                    if price and price > 0:
+                        result["pb_ratio"] = round(price / bps, 2)
+                if eps and eps > 0:
+                    result["eps"] = eps
+                    if price and price > 0:
+                        result["pe_ratio"] = round(price / eps, 2)
+                elif eps and eps < 0:
+                    result["eps"] = eps
+                    result["pe_ratio"] = None  # 亏损不计算PE
+
+                result["report_date"] = str(latest.get("REPORT_DATE", ""))[:10]
+    except Exception as e:
+        logger.debug(f"[东方财富] {code} 估值数据失败: {e}")
+
+    logger.info(f"[估值] {code} PB={result.get('pb_ratio', 'N/A')} PE={result.get('pe_ratio', 'N/A')}")
+    return result
+
+
+def _safe_float(val, div=1.0) -> Optional[float]:
+    """安全转换数值"""
+    if val is None or str(val).strip() in ("", "None", "nan", "NaN"):
+        return None
+    try:
+        v = float(val)
+        if div != 1.0:
+            v = v / div
+        return round(v, 4)
+    except (ValueError, TypeError):
+        return None
+
+    logger.info(f"[估值] {code} PB={result.get('pb_ratio', 'N/A')} PE={result.get('pe_ratio', 'N/A')}")
+    return result
+
+
+def get_commodity_prices() -> dict:
+    """获取大宗商品/资源价格（橡胶、钼、黄金、原油等）"""
+    import warnings
+    warnings.filterwarnings("ignore")
+    result = {}
+
+    # 黄金现货
+    try:
+        df = _retry(lambda: ak.spot_hist_sge(symbol="Au99.99"))
+        if df is not None and not df.empty:
+            latest = df.iloc[-1]
+            result["黄金Au99.99"] = {
+                "price": float(latest.get("收盘价", 0)),
+                "date": str(latest.name) if hasattr(latest, 'name') else "",
+            }
+    except Exception:
+        pass
+
+    # 银现货
+    try:
+        df = _retry(lambda: ak.spot_hist_sge(symbol="Ag(T+D)"))
+        if df is not None and not df.empty:
+            latest = df.iloc[-1]
+            result["白银Ag(T+D)"] = {
+                "price": float(latest.get("收盘价", 0)),
+                "date": str(latest.name) if hasattr(latest, 'name') else "",
+            }
+    except Exception:
+        pass
+
+    # 通过搜索获取期货主力合约
+    try:
+        futures_map = {
+            "橡胶ru": "ru2509", "螺纹钢rb": "rb2510", "铁矿石i": "i2509",
+            "沪铜cu": "cu2506", "沪铝al": "al2506",
+        }
+        for name, symbol in futures_map.items():
+            try:
+                df = _retry(lambda s=symbol: ak.futures_main_sina(symbol=s))
+                if df is not None and not df.empty:
+                    latest = df.iloc[-1]
+                    result[name] = {
+                        "price": float(latest.get("收盘价", latest.get("close", 0))),
+                        "date": str(latest.get("日期", latest.get("date", ""))),
+                    }
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    logger.info(f"[商品价格] 获取 {len(result)} 种商品/资源价格")
+    return result
+
+
 def _classify_emotion_stage(zt_count: int, dt_count: int,
                              max_boards: int, bomb_rate: float,
                              upgrade_rate: float) -> str:

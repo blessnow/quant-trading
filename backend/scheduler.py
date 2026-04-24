@@ -500,6 +500,12 @@ def setup_jobs():
         args=["ChenXiaoqunShort"],
         id="chen_xiaoqun_intraday", replace_existing=True, misfire_grace_time=120,
     )
+    # 鱼哥价值投资 — 每天早盘分析一次（9:35开盘后下单，用实时价格）
+    scheduler.add_job(
+        run_strategy, "cron", minute=35, hour=9, timezone=CST, day_of_week="mon-fri",
+        args=["YuGeValue"],
+        id="yu_ge_value", replace_existing=True, misfire_grace_time=600,
+    )
     # T+1卖出
     scheduler.add_job(
         sell_a_share_pending, "cron", hour=9, minute=35, timezone=CST, day_of_week="mon-fri",
