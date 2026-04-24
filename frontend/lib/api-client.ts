@@ -1,5 +1,5 @@
 const API_BASE = typeof window === "undefined"
-  ? `http://${process.env.API_HOST || "localhost:8000"}/api`
+  ? `${process.env.BACKEND_URL || "http://localhost:8000"}/api`
   : "/api";
 
 async function fetchAPI<T>(path: string, init?: RequestInit): Promise<T> {
