@@ -1,0 +1,50 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/strategies/strategies",
+    "pages/trades/trades",
+    "pages/membership/membership",
+    "pages/my/my",
+    "pages/strategy-detail/strategy-detail",
+    "pages/article-detail/article-detail"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#ffffff",
+    "navigationBarTitleText": "QuantTrader",
+    "navigationBarTextStyle": "black"
+  },
+  "tabBar": {
+    "color": "#999999",
+    "selectedColor": "#1a1a2e",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "看板",
+        "iconPath": "images/tab/dashboard_off.png",
+        "selectedIconPath": "images/tab/dashboard_on.png"
+      },
+      {
+        "pagePath": "pages/strategies/strategies",
+        "text": "策略",
+        "iconPath": "images/tab/strategy_off.png",
+        "selectedIconPath": "images/tab/strategy_on.png"
+      },
+      {
+        "pagePath": "pages/trades/trades",
+        "text": "观点",
+        "iconPath": "images/tab/article_off.png",
+        "selectedIconPath": "images/tab/article_on.png"
+      },
+      {
+        "pagePath": "pages/my/my",
+        "text": "我的",
+        "iconPath": "images/tab/my_off.png",
+        "selectedIconPath": "images/tab/my_on.png"
+      }
+    ]
+  },
+  "sitemapLocation": "sitemap.json"
+}

@@ -1,0 +1,115 @@
+<!--pages/index/index.wxml-->
+<view class="page">
+  <!-- 资产头部 — 深色卡片 -->
+  <view class="hero">
+    <text class="hero-label">总资产(元)</text>
+    <view class="hero-row">
+      <text class="hero-value">¥{{summary.total_value || '1,000,000'}}</text>
+      <view class="hero-badge {{summary.total_pnl > 0 ? 'bg-up' : summary.total_pnl < 0 ? 'bg-down' : 'bg-zero'}}">
+        {{summary.total_pnl > 0 ? '+' : ''}}{{summary.total_pnl || 0}}
+      </view>
+    </view>
+    <view class="hero-markets">
+      <view class="hm-item">
+        <view class="hm-status">
+          <view class="hm-dot {{aShareOpen ? 'on' : ''}}"></view>
+          <text class="hm-name">A股</text>
+        </view>
+        <text class="hm-val">¥{{aShareTotal}}</text>
+        <text class="hm-pnl {{aSharePnl > 0 ? 'c-up' : aSharePnl < 0 ? 'c-down' : 'c-zero'}}">
+          {{aSharePnl > 0 ? '+' : ''}}¥{{aSharePnl}}
+        </text>
+      </view>
+      <view class="hm-divider"></view>
+      <view class="hm-item">
+        <view class="hm-status">
+          <view class="hm-dot {{usStockOpen ? 'on' : ''}}"></view>
+          <text class="hm-name">美股</text>
+        </view>
+        <text class="hm-val">¥{{usStockTotal}}</text>
+        <text class="hm-pnl {{usStockPnl > 0 ? 'c-up' : usStockPnl < 0 ? 'c-down' : 'c-zero'}}">
+          {{usStockPnl > 0 ? '+' : ''}}¥{{usStockPnl}}
+        </text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 收益曲线 -->
+  <view class="card">
+    <view class="card-header">
+      <text class="card-title">收益走势</text>
+      <view class="curve-pills">
+        <view class="pill {{curveMode === 'best' ? 'pill-on' : ''}}" bindtap="switchCurve" data-mode="best">最佳</view>
+        <view class="pill {{curveMode === 'A_SHARE' ? 'pill-on' : ''}}" bindtap="switchCurve" data-mode="A_SHARE">A股</view>
+        <view class="pill {{curveMode === 'US_STOCK' ? 'pill-on' : ''}}" bindtap="switchCurve" data-mode="US_STOCK">美股</view>
+      </view>
+    </view>
+    <view class="time-bar">
+      <view wx:for="{{timeRanges}}" wx:key="days"
+        class="tb {{activeRangeIdx === index ? 'tb-on' : ''}}"
+        bindtap="switchRange" data-idx="{{index}}">{{item.label}}</view>
+    </view>
+    <view class="curve-info">
+      <text class="ci-main">{{bestLabel}}</text>
+      <text class="ci-sub" wx:if="{{benchmarkLabel}}">vs {{benchmarkLabel}}</text>
+    </view>
+    <canvas canvas-id="equityChart" id="equityChart" type="2d" class="chart-canvas"
+      style="width:100%;height:440rpx"></canvas>
+    <view class="chart-legend">
+      <view class="lg"><view class="lg-dot" style="background:#e05555"></view><text>收益</text></view>
+      <view class="lg" wx:if="{{benchmarkLabel}}"><view class="lg-dash"></view><text>基准</text></view>
+    </view>
+  </view>
+
+  <!-- 策略列表 -->
+  <view class="card">
+    <view class="card-header">
+      <text class="card-title">运行中的策略</text>
+    </view>
+    <view wx:for="{{strategies}}" wx:key="id" class="st-card" bindtap="goStrategyDetail" data-id="{{item.id}}">
+      <view class="st-top">
+        <view class="st-icon {{item.market === 'A_SHARE' ? 'st-icon-a' : 'st-icon-u'}}">
+          {{item.market === 'A_SHARE' ? 'A' : 'U'}}
+        </view>
+        <view class="st-info">
+          <text class="st-name">{{item.display_name}}</text>
+          <text class="st-desc">{{item.market === 'A_SHARE' ? 'A股' : '美股'}} · {{item.is_active ? '运行中' : '已暂停'}}</text>
+        </view>
+        <view wx:if="{{isMember && item.performance}}" class="st-pnl-box {{item.performance.total_pnl > 0 ? 'bg-up-light' : item.performance.total_pnl < 0 ? 'bg-down-light' : 'bg-zero-light'}}">
+          <text class="{{item.performance.total_pnl > 0 ? 'c-up' : item.performance.total_pnl < 0 ? 'c-down' : 'c-zero'}}">
+            {{item.performance.total_pnl > 0 ? '+' : ''}}{{item.performance.total_pnl}}
+          </text>
+        </view>
+        <view class="st-arrow">
+          <text class="arrow-icon">></text>
+        </view>
+      </view>
+      <view wx:if="{{isMember && item.performance}}" class="st-metrics">
+        <view class="sm">
+          <text class="sm-val">{{item.performance.total_trades}}</text>
+          <text class="sm-label">交易</text>
+        </view>
+        <view class="sm">
+          <text class="sm-val">{{item.win_rate_pct}}%</text>
+          <text class="sm-label">胜率</text>
+        </view>
+        <view class="sm">
+          <text class="sm-val">{{item.performance.total_pnl > 0 ? '+' : ''}}{{item.performance.total_pnl}}</text>
+          <text class="sm-label">盈亏</text>
+        </view>
+      </view>
+      <view wx:elif="{{!isMember}}" class="st-lock">
+        <text class="st-lock-text">会员可查看策略详情</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 会员引导 -->
+  <view wx:if="{{!isMember}}" class="member-banner">
+    <view class="mb-title">开通会员，解锁全部数据</view>
+    <view class="mb-desc">持仓明细 · 交易记录 · 策略分析</view>
+    <view class="mb-btn" bindtap="goMembership">立即开通 ¥49/月</view>
+  </view>
+
+  <view class="footer-space"></view>
+</view>

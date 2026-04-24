@@ -1,0 +1,120 @@
+<!--pages/strategy-detail/strategy-detail.wxml-->
+<view class="page" wx:if="{{strategy}}">
+  <!-- 深色头部 -->
+  <view class="hero">
+    <view class="hero-row">
+      <view class="st-icon {{strategy.market === 'A_SHARE' ? 'st-icon-a' : 'st-icon-u'}}">
+        {{strategy.market === 'A_SHARE' ? 'A' : 'U'}}
+      </view>
+      <view class="hero-info">
+        <text class="hero-name">{{strategy.display_name}}</text>
+        <view class="hero-tags">
+          <view class="hero-tag">{{strategy.market === 'A_SHARE' ? 'A股' : '美股'}}</view>
+          <view class="hero-tag">
+            <view class="dot {{strategy.is_active ? 'open' : 'closed'}}" style="width:10rpx;height:10rpx"></view>
+            <text>{{strategy.is_active ? '运行中' : '已暂停'}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    <text class="hero-desc">{{strategyMeta[strategy.name] || strategy.description}}</text>
+  </view>
+
+  <!-- 绩效指标 -->
+  <view class="card" wx:if="{{strategy.performance}}">
+    <view class="card-header">
+      <text class="card-title">绩效指标</text>
+    </view>
+    <view class="metrics-grid">
+      <view class="metric-box">
+        <text class="metric-val">{{strategy.performance.total_trades}}</text>
+        <text class="metric-label">交易笔数</text>
+      </view>
+      <view class="metric-box">
+        <text class="metric-val">{{strategy.win_rate_pct}}%</text>
+        <text class="metric-label">胜率</text>
+      </view>
+      <view class="metric-box">
+        <text class="metric-val {{strategy.total_pnl_class}}">{{strategy.total_pnl_str}}</text>
+        <text class="metric-label">总盈亏</text>
+      </view>
+      <view class="metric-box">
+        <text class="metric-val">{{strategy.sharpe_str}}</text>
+        <text class="metric-label">Sharpe</text>
+      </view>
+      <view class="metric-box">
+        <text class="metric-val">{{strategy.max_dd_str}}%</text>
+        <text class="metric-label">最大回撤</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 收益曲线 vs 基准 -->
+  <view class="card">
+    <view class="card-header">
+      <text class="card-title">收益曲线</text>
+      <text class="card-bench" wx:if="{{benchmarkName}}">vs {{benchmarkName}}</text>
+    </view>
+    <!-- 时间范围选择 -->
+    <view class="time-bar">
+      <view wx:for="{{timeRanges}}" wx:key="days"
+        class="tb {{activeRangeIdx === index ? 'tb-on' : ''}}"
+        bindtap="switchRange" data-idx="{{index}}">{{item.label}}</view>
+    </view>
+    <canvas canvas-id="detailChart" id="detailChart" type="2d" class="chart-canvas"
+      style="width:100%;height:440rpx"></canvas>
+    <view class="chart-legend">
+      <view class="lg"><view class="lg-dot" style="background:#e05555"></view><text>{{strategy.display_name}}</text></view>
+      <view class="lg" wx:if="{{benchmarkName}}"><view class="lg-dash"></view><text>{{benchmarkName}}</text></view>
+    </view>
+  </view>
+
+  <!-- 当前持仓 -->
+  <view class="card" wx:if="{{positions.length > 0}}">
+    <view class="card-header">
+      <text class="card-title">当前持仓</text>
+      <text class="card-count">{{positions.length}}只</text>
+    </view>
+    <view wx:for="{{positions}}" wx:key="id" class="pos-row">
+      <view class="pos-left">
+        <view class="pos-icon {{item.market === 'A_SHARE' ? 'st-icon-a' : 'st-icon-u'}}">
+          {{item.market === 'A_SHARE' ? 'A' : 'U'}}
+        </view>
+        <view class="pos-name-wrap">
+          <text class="pos-symbol">{{item.symbol}}</text>
+          <text class="pos-name">{{item.name}}</text>
+        </view>
+      </view>
+      <view class="pos-right">
+        <text class="pos-shares">{{item.shares}}股</text>
+        <text class="pos-pnl {{item.unrealized_pnl > 0 ? 'pnl-up' : item.unrealized_pnl < 0 ? 'pnl-down' : 'pnl-zero'}}">
+          {{item.unrealized_pnl > 0 ? '+' : ''}}¥{{item.unrealized_pnl}}
+        </text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 最近交易 -->
+  <view class="card" wx:if="{{trades.length > 0}}">
+    <view class="card-header">
+      <text class="card-title">最近交易</text>
+    </view>
+    <view wx:for="{{trades}}" wx:key="id" class="trade-row">
+      <view class="trade-left">
+        <view class="trade-side {{item.side === 'BUY' ? 'trade-buy' : 'trade-sell'}}">
+          {{item.side === 'BUY' ? '买' : '卖'}}
+        </view>
+        <view class="trade-info">
+          <text class="trade-symbol">{{item.symbol}}</text>
+          <text class="trade-time">{{item.executed_at_slice}}</text>
+        </view>
+      </view>
+      <view class="trade-right">
+        <text class="trade-price">{{item.shares}}股 @ {{item.price}}</text>
+        <text wx:if="{{item.pnl != null}}" class="trade-pnl {{item.pnl > 0 ? 'pnl-up' : item.pnl < 0 ? 'pnl-down' : 'pnl-zero'}}">
+          {{item.pnl > 0 ? '+' : ''}}¥{{item.pnl}}
+        </text>
+      </view>
+    </view>
+  </view>
+</view>

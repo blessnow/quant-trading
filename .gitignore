@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+*.db
+*.sqlite
+node_modules/
+.DS_Store
+.env
+data/quant.db
+frontend/.next/
+frontend/node_modules/
+miniapp/node_modules/
+backend/venv/
+backend/.venv/

@@ -1,0 +1,56 @@
+/* pages/article-detail/article-detail.wxss */
+
+.ad-title {
+  font-size: 36rpx;
+  font-weight: 700;
+  line-height: 1.5;
+  color: #1a1a2e;
+}
+
+.ad-meta {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.ad-cat {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  background: #eef2ff;
+  color: #4f6ef7;
+  font-weight: 600;
+}
+
+.ad-date, .ad-views {
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.ad-dot {
+  font-size: 22rpx;
+  color: #d1d5db;
+}
+
+.ad-tags {
+  display: flex;
+  gap: 10rpx;
+  margin-top: 16rpx;
+  flex-wrap: wrap;
+}
+
+.ad-tag {
+  font-size: 20rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 6rpx;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.ad-content {
+  font-size: 30rpx;
+  line-height: 2;
+  color: #374151;
+  white-space: pre-wrap;
+}

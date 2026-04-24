@@ -1,0 +1,33 @@
+<!--pages/trades/trades.wxml — 文章观点页-->
+<view class="page">
+  <!-- 深色头部 -->
+  <view class="hero">
+    <text class="hero-title">观点与研究</text>
+    <text class="hero-sub">市场热点 · 策略分析 · 原创观点</text>
+  </view>
+
+  <!-- 分类切换 — 药丸风格 -->
+  <view class="cat-pills">
+    <view wx:for="{{categories}}" wx:key="key"
+      class="cat-pill {{activeCategory === item.key ? 'cat-pill-on' : ''}}"
+      bindtap="switchCategory" data-key="{{item.key}}">{{item.label}}</view>
+  </view>
+
+  <!-- 文章列表 -->
+  <view wx:if="{{articles.length > 0}}">
+    <view wx:for="{{articles}}" wx:key="id" class="article-card" bindtap="goArticle" data-id="{{item.id}}">
+      <view class="article-title">{{item.title}}</view>
+      <view class="article-summary" wx:if="{{item.summary}}">{{item.summary}}</view>
+      <view class="article-meta">
+        <view class="article-cat-tag">{{item.category === 'market' ? '市场热点' : item.category === 'opinion' ? '原创观点' : item.category === 'strategy' ? '策略分析' : '量化教程'}}</view>
+        <view wx:for="{{item.tag}}" wx:for-item="t" wx:key="*this" class="article-tag">{{t}}</view>
+        <view class="article-meta-right">
+          <text class="article-date">{{item.created_at}}</text>
+          <text class="article-dot">·</text>
+          <text class="article-views">{{item.view_count}} 阅读</text>
+        </view>
+      </view>
+    </view>
+  </view>
+  <view wx:else class="empty-text">暂无文章</view>
+</view>

@@ -1,0 +1,21 @@
+<!--pages/article-detail/article-detail.wxml-->
+<view class="page" wx:if="{{article}}">
+  <!-- 文章头部 -->
+  <view class="card">
+    <view class="ad-title">{{article.title}}</view>
+    <view class="ad-meta">
+      <view class="ad-cat">{{article.category === 'market' ? '市场热点' : article.category === 'opinion' ? '原创观点' : article.category === 'strategy' ? '策略分析' : '量化教程'}}</view>
+      <text class="ad-date">{{article.created_at_slice}}</text>
+      <text class="ad-dot">·</text>
+      <text class="ad-views">{{article.view_count}} 阅读</text>
+    </view>
+    <view class="ad-tags" wx:if="{{article.tag.length > 0}}">
+      <view wx:for="{{article.tag}}" wx:key="*this" class="ad-tag">{{item}}</view>
+    </view>
+  </view>
+
+  <!-- 文章内容 -->
+  <view class="card">
+    <view class="ad-content">{{article.content}}</view>
+  </view>
+</view>

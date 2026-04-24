@@ -1,0 +1,76 @@
+<!--pages/strategies/strategies.wxml-->
+<view class="page">
+  <!-- 会员守卫 -->
+  <view wx:if="{{!isMember}}" class="member-banner">
+    <view class="title">会员功能</view>
+    <view class="desc">升级会员查看策略详情、排行榜和绩效数据</view>
+    <view class="btn-primary" bindtap="goMembership">立即开通 ¥49/月</view>
+  </view>
+
+  <view wx:else>
+    <!-- 深色头部 -->
+    <view class="hero">
+      <text class="hero-title">策略中心</text>
+      <text class="hero-sub">{{strategies.length}} 个策略在运行</text>
+    </view>
+
+    <!-- 排行榜 -->
+    <view class="card" wx:if="{{rankings.length > 0}}">
+      <view class="card-header">
+        <text class="card-title">策略排行榜</text>
+        <text class="rank-hint">按综合得分</text>
+      </view>
+      <view wx:for="{{rankings}}" wx:key="strategy_id" class="rank-item" bindtap="goDetail" data-id="{{item.strategy_id}}">
+        <view class="rank-medal {{index < 3 ? 'rank-top-' + (index + 1) : ''}}">
+          {{index + 1}}
+        </view>
+        <view class="rank-icon {{item.market === 'A_SHARE' ? 'st-icon-a' : 'st-icon-u'}}">
+          {{item.market === 'A_SHARE' ? 'A' : 'U'}}
+        </view>
+        <view class="rank-info">
+          <text class="rank-name">{{item.display_name}}</text>
+          <text class="rank-detail">得分{{item.score}} · 胜率{{item.win_rate_pct}}%</text>
+        </view>
+        <view class="rank-pnl {{item.total_pnl > 0 ? 'pnl-up' : item.total_pnl < 0 ? 'pnl-down' : 'pnl-zero'}}">
+          {{item.total_pnl > 0 ? '+' : ''}}{{item.total_pnl}}
+        </view>
+      </view>
+    </view>
+
+    <!-- 策略卡片列表 -->
+    <view class="card-header" style="padding:0 4rpx">
+      <text class="card-title">全部策略</text>
+    </view>
+    <view wx:for="{{strategies}}" wx:key="id" class="st-card" bindtap="goDetail" data-id="{{item.id}}">
+      <view class="st-top">
+        <view class="st-icon {{item.market === 'A_SHARE' ? 'st-icon-a' : 'st-icon-u'}}">
+          {{item.market === 'A_SHARE' ? 'A' : 'U'}}
+        </view>
+        <view class="st-info">
+          <text class="st-name">{{item.display_name}}</text>
+          <text class="st-desc">{{item.market === 'A_SHARE' ? 'A股' : '美股'}} · {{item.is_active ? '运行中' : '已暂停'}}</text>
+        </view>
+        <view class="dot {{item.is_active ? 'open' : 'closed'}}"></view>
+      </view>
+      <view class="st-schedule">{{strategySchedule[item.name] || ''}}</view>
+      <view wx:if="{{item.performance}}" class="metrics-row">
+        <view class="metric">
+          <text class="metric-val">{{item.performance.total_trades}}</text>
+          <text class="metric-label">交易</text>
+        </view>
+        <view class="metric">
+          <text class="metric-val">{{item.win_rate_pct}}%</text>
+          <text class="metric-label">胜率</text>
+        </view>
+        <view class="metric">
+          <text class="metric-val {{item.performance.total_pnl > 0 ? 'pnl-up' : item.performance.total_pnl < 0 ? 'pnl-down' : ''}}">{{item.performance.total_pnl > 0 ? '+' : ''}}{{item.performance.total_pnl}}</text>
+          <text class="metric-label">盈亏</text>
+        </view>
+        <view class="metric">
+          <text class="metric-val">{{item.sharpe_str}}</text>
+          <text class="metric-label">Sharpe</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,60 @@
+<!--pages/my/my.wxml-->
+<view class="page">
+  <!-- 深色头部 -->
+  <view class="hero">
+    <view class="hero-profile">
+      <view class="avatar">{{nickname.slice(0,1)}}</view>
+      <view class="hero-info">
+        <text class="hero-name">{{nickname}}</text>
+        <view wx:if="{{isMember}}" class="hero-badge">
+          <view class="badge-dot"></view>
+          <text>会员 · 到期{{memberExpire}}</text>
+        </view>
+        <view wx:else class="hero-badge hero-badge-dim">
+          <text>未开通会员</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 升级卡片 -->
+  <view wx:if="{{!isMember}}" class="upgrade-card" bindtap="goMembership">
+    <view class="upgrade-icon">PRO</view>
+    <view class="upgrade-info">
+      <text class="upgrade-title">升级会员</text>
+      <text class="upgrade-desc">解锁完整策略数据、持仓详情、交易记录</text>
+    </view>
+    <text class="upgrade-arrow">></text>
+  </view>
+
+  <!-- 功能菜单 -->
+  <view class="card">
+    <view class="menu-item" bindtap="goMembership">
+      <view class="menu-icon-wrap" style="background:#fffbeb">
+        <text class="menu-icon" style="color:#f59e0b">V</text>
+      </view>
+      <text class="menu-text">{{isMember ? '续费会员' : '开通会员'}}</text>
+      <text class="menu-arrow">></text>
+    </view>
+    <view class="menu-item" bindtap="loadData">
+      <view class="menu-icon-wrap" style="background:#f0fdf4">
+        <text class="menu-icon" style="color:#22c55e">R</text>
+      </view>
+      <text class="menu-text">刷新数据</text>
+      <text class="menu-arrow">></text>
+    </view>
+  </view>
+
+  <!-- 关于 -->
+  <view class="card">
+    <view class="menu-item">
+      <view class="menu-icon-wrap" style="background:#eef2ff">
+        <text class="menu-icon" style="color:#4f6ef7">Q</text>
+      </view>
+      <view class="menu-text-wrap">
+        <text class="menu-text">关于 QuantTrader</text>
+        <text class="menu-desc">v1.0.0 · 模拟盘</text>
+      </view>
+    </view>
+  </view>
+</view>
