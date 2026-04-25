@@ -28,7 +28,7 @@ export default async function Dashboard() {
   ]);
 
   const totalValue = summary?.total_value || 1000000;
-  const totalPnl = (summary?.total_pnl || 0) - (summary?.initial_capital || 1000000);
+  const totalPnl = summary?.total_pnl || 0;
   const pnlPct = summary?.initial_capital ? (totalPnl / summary.initial_capital) * 100 : 0;
   const aShare = summary?.markets?.A_SHARE;
   const usStock = summary?.markets?.US_STOCK;

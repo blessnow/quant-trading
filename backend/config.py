@@ -61,3 +61,19 @@ JWT_EXPIRE_HOURS = 72
 # 会员价格（单位：元）
 MEMBER_PRICE_MONTHLY = 49
 MEMBER_PRICE_YEARLY = 399
+
+# 微信开放平台Web扫码登录（暂未申请）
+WX_WEB_APPID = os.environ.get("WX_WEB_APPID", "")
+WX_WEB_SECRET = os.environ.get("WX_WEB_SECRET", "")
+WX_WEB_REDIRECT_URI = os.environ.get("WX_WEB_REDIRECT_URI", "")
+
+# 短信验证码配置
+SMS_PROVIDER = os.environ.get("SMS_PROVIDER", "mock")  # mock/aliyun/tencent
+SMS_ACCESS_KEY = os.environ.get("SMS_ACCESS_KEY", "")
+SMS_SECRET_KEY = os.environ.get("SMS_SECRET_KEY", "")
+SMS_SIGN_NAME = os.environ.get("SMS_SIGN_NAME", "QuantTrader")
+SMS_TEMPLATE_CODE = os.environ.get("SMS_TEMPLATE_CODE", "")
+
+# 二维码有效期（秒）
+LOGIN_QR_EXPIRE_SECONDS = 300
+PAY_QR_EXPIRE_SECONDS = 300

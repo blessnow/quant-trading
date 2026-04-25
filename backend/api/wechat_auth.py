@@ -137,3 +137,63 @@ async def get_profile(authorization: Optional[str] = Header(None)):
         }
     finally:
         await db.close()
+
+
+# 统一认证接口（供前端使用）
+@router.get("/me")
+async def get_me(authorization: Optional[str] = Header(None)):
+    """获取当前用户完整信息"""
+    user = await get_current_user(authorization)
+    db = await get_db()
+    try:
+        async with db.execute(
+            "SELECT id, openid, phone, nickname, avatar_url, is_member, member_expire_at, login_type, created_at FROM users WHERE id=?",
+            (user["user_id"],)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        return {
+            "id": row[0],
+            "openid": row[1],
+            "phone": row[2],
+            "nickname": row[3],
+            "avatar_url": row[4],
+            "is_member": bool(row[5]),
+            "member_expire_at": row[6],
+            "login_type": row[7],
+            "created_at": row[8],
+        }
+    finally:
+        await db.close()
+
+
+class RefreshRequest(BaseModel):
+    token: str
+
+
+@router.post("/refresh")
+async def refresh_token(req: RefreshRequest):
+    """刷新Token"""
+    payload = verify_token(req.token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Token无效")
+
+    db = await get_db()
+    try:
+        async with db.execute(
+            "SELECT openid, is_member, member_expire_at FROM users WHERE id=?",
+            (payload["user_id"],)
+        ) as cur:
+            user = await cur.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+
+        new_token = _create_token(payload["user_id"], user[0] or f"user_{payload['user_id']}")
+        return {
+            "token": new_token,
+            "is_member": bool(user[1]),
+            "member_expire_at": user[2],
+        }
+    finally:
+        await db.close()

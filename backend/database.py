@@ -117,13 +117,45 @@ CREATE TABLE IF NOT EXISTS notification_config (
 
 CREATE TABLE IF NOT EXISTS users (
     id          INTEGER PRIMARY KEY,
-    openid      TEXT NOT NULL UNIQUE,
+    openid      TEXT UNIQUE,
     nickname    TEXT NOT NULL DEFAULT '',
     avatar_url  TEXT NOT NULL DEFAULT '',
-    phone       TEXT,
+    phone       TEXT UNIQUE,
+    password_hash TEXT,
+    login_type  TEXT NOT NULL DEFAULT 'wechat',
+    web_openid  TEXT UNIQUE,
+    unionid     TEXT UNIQUE,
     is_member   INTEGER NOT NULL DEFAULT 0,
     member_expire_at TEXT,
+    last_login_at TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS login_sessions (
+    id          INTEGER PRIMARY KEY,
+    session_id  TEXT NOT NULL UNIQUE,
+    qr_code_url TEXT,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    user_id     INTEGER,
+    token       TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at  TEXT NOT NULL,
+    confirmed_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS payment_sessions (
+    id          INTEGER PRIMARY KEY,
+    session_id  TEXT NOT NULL UNIQUE,
+    order_no    TEXT NOT NULL,
+    user_id     INTEGER NOT NULL,
+    qr_code_url TEXT,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at  TEXT NOT NULL,
+    paid_at     TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (order_no) REFERENCES orders(order_no)
 );
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -184,6 +216,26 @@ CREATE TABLE IF NOT EXISTS articles (
     view_count  INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL,
+    strategy_id TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id          INTEGER PRIMARY KEY,
+    session_id  INTEGER NOT NULL,
+    role        TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    tool_calls  TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
 );
 """
 
@@ -249,3 +301,17 @@ async def init_db():
             )
 
         await db.commit()
+
+        # 迁移：users 表新增字段
+        try:
+            async with db.execute("SELECT password_hash FROM users LIMIT 1") as cur:
+                await cur.fetchone()
+        except aiosqlite.OperationalError:
+            await db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+            await db.execute("ALTER TABLE users ADD COLUMN login_type TEXT NOT NULL DEFAULT 'wechat'")
+            await db.execute("ALTER TABLE users ADD COLUMN web_openid TEXT")
+            await db.execute("ALTER TABLE users ADD COLUMN unionid TEXT")
+            await db.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
+            await db.commit()
+            import logging
+            logging.info("[数据库] users 表迁移完成：新增登录相关字段")

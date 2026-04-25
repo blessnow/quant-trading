@@ -37,7 +37,7 @@ async def create_prepay_order(
     amount_fen: int,
     description: str = "量化交易会员",
 ) -> Optional[dict]:
-    """调用微信统一下单API，返回小程序支付参数"""
+    """调用微信统一下单API，返回小程序支付参数（JSAPI模式）"""
     if not config.WX_MCH_ID:
         # 测试模式：直接返回模拟支付参数
         logger.info(f"[支付] 测试模式，模拟下单: {order_no} {amount_fen}分")
@@ -92,6 +92,58 @@ async def create_prepay_order(
 
     except Exception as e:
         logger.error(f"[支付] 异常: {e}")
+        return None
+
+
+async def create_native_order(
+    order_no: str,
+    amount_fen: int,
+    description: str = "量化交易会员",
+) -> Optional[dict]:
+    """调用微信统一下单API，返回Native支付二维码URL"""
+    if not config.WX_MCH_ID:
+        # 测试模式：返回模拟二维码URL
+        logger.info(f"[支付-Native] 测试模式，模拟下单: {order_no} {amount_fen}分")
+        return {
+            "code_url": f"weixin://wxpay/test_{order_no}",
+            "test_mode": True,
+        }
+
+    nonce_str = uuid.uuid4().hex[:32]
+    params = {
+        "appid": config.WX_APPID,
+        "mch_id": config.WX_MCH_ID,
+        "nonce_str": nonce_str,
+        "body": description,
+        "out_trade_no": order_no,
+        "total_fee": amount_fen,
+        "spbill_create_ip": "127.0.0.1",
+        "notify_url": config.WX_PAY_NOTIFY_URL,
+        "trade_type": "NATIVE",
+    }
+    params["sign"] = _make_sign(params, config.WX_MCH_KEY)
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                "https://api.mch.weixin.qq.com/pay/unifiedorder",
+                content=_dict_to_xml(params),
+                headers={"Content-Type": "application/xml"},
+                timeout=15,
+            )
+        result = _xml_to_dict(resp.text)
+
+        if result.get("return_code") != "SUCCESS" or result.get("result_code") != "SUCCESS":
+            logger.error(f"[支付-Native] 统一下单失败: {result}")
+            return None
+
+        return {
+            "code_url": result["code_url"],
+            "test_mode": False,
+        }
+
+    except Exception as e:
+        logger.error(f"[支付-Native] 异常: {e}")
         return None
 
 

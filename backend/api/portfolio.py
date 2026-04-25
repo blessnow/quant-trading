@@ -158,9 +158,9 @@ async def get_summary():
         total_initial = 0
 
         for market in ["A_SHARE", "US_STOCK"]:
-            # 汇总该市场所有策略账户
+            # 汇总该市场级账户（strategy_id=NULL 为市场汇总账户）
             async with db.execute(
-                "SELECT COALESCE(SUM(cash), 0), COALESCE(SUM(initial_capital), 0) FROM accounts WHERE strategy_id IS NOT NULL AND market=?",
+                "SELECT COALESCE(SUM(cash), 0), COALESCE(SUM(initial_capital), 0) FROM accounts WHERE strategy_id IS NULL AND market=?",
                 (market,)
             ) as cur:
                 acct = await cur.fetchone()

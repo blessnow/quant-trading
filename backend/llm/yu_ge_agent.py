@@ -65,6 +65,7 @@ class YuGeAgent:
                     tools=TOOL_DEFINITIONS,
                     messages=messages,
                     max_tokens=4096,
+                    timeout=120.0,
                 )
             except Exception as e:
                 logger.error(f"[鱼哥Agent] LLM 调用失败: {e}")

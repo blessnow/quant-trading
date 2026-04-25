@@ -43,6 +43,7 @@ module.exports = {
   getUserProfile: () => request('/api/wechat/profile'),
   createOrder: (plan) => request('/api/pay/create-order', { method: 'POST', data: { plan } }),
   confirmTestOrder: () => request('/api/pay/confirm-test', { method: 'POST' }),
+  checkPaymentStatus: (orderNo) => request(`/api/pay/check-status?order_no=${orderNo}`),
   getOrders: () => request('/api/pay/orders'),
 
   // 收益曲线（策略级+基准）

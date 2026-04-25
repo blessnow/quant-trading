@@ -3,6 +3,9 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
@@ -18,6 +21,9 @@ from api.backtest import router as backtest_router
 from api.wechat_auth import router as wechat_auth_router
 from api.wechat_pay import router as wechat_pay_router
 from api.articles import router as articles_router
+from api.phone_auth import router as phone_auth_router
+from api.web_auth import router as web_auth_router
+from api.chat import router as chat_router
 
 # WebSocket连接管理
 ws_connections: list[WebSocket] = []
@@ -59,6 +65,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class TimeoutMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        return await call_next(request)
+
+app.add_middleware(TimeoutMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:8000", "*"],
@@ -75,6 +89,9 @@ app.include_router(backtest_router)
 app.include_router(wechat_auth_router)
 app.include_router(wechat_pay_router)
 app.include_router(articles_router)
+app.include_router(phone_auth_router)
+app.include_router(web_auth_router)
+app.include_router(chat_router)
 
 
 @app.get("/")
@@ -157,4 +174,6 @@ if __name__ == "__main__":
         port=config.API_PORT,
         reload=False,
         log_level="info",
+        timeout_keep_alive=1200,
+        limit_concurrency=100,
     )

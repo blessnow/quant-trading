@@ -12,10 +12,14 @@ from loguru import logger
 
 HEADERS = {
     "Referer": "https://finance.sina.com.cn",
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+}
+EM_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://emweb.securities.eastmoney.com/",
 }
 MAX_RETRIES = 3
-RETRY_DELAY = 2
+RETRY_DELAY = 3
 
 _history_cache: dict[str, pd.DataFrame] = {}
 _code_list_cache: list[str] | None = None
@@ -117,7 +121,7 @@ def get_realtime_quotes() -> pd.DataFrame:
         except Exception as e:
             logger.warning(f"批次 {batch_idx+1}/{total_batches} 失败: {e}")
         if batch_idx < total_batches - 1:
-            time.sleep(0.15)
+            time.sleep(0.2)
     if not all_items:
         return pd.DataFrame()
     df = pd.DataFrame(all_items)
@@ -274,7 +278,8 @@ def get_zt_pool(date_str: str = None) -> pd.DataFrame:
         from datetime import datetime
         date_str = datetime.now().strftime("%Y%m%d")
     try:
-        df = _retry(lambda: ak.stock_zt_pool_em(date=date_str))
+        time.sleep(0.5)
+        df = _retry(lambda: ak.stock_zt_pool_em(date=date_str), delay=3)
         if df is None or df.empty:
             return pd.DataFrame()
         df = df.rename(columns={
@@ -303,31 +308,51 @@ def get_zt_pool(date_str: str = None) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+_industry_cache: pd.DataFrame | None = None
+_industry_cache_time: float = 0
+
 def get_industry_board_ranking() -> pd.DataFrame:
-    """获取行业板块排名"""
-    try:
-        df = _retry(ak.stock_board_industry_name_em)
-        if df is None or df.empty:
-            return pd.DataFrame()
-        df = df.rename(columns={
-            "板块名称": "name", "涨跌幅": "change_pct",
-            "上涨家数": "up_count", "下跌家数": "down_count",
-            "领涨股票": "leading_stock", "领涨股票-涨跌幅": "leading_change",
-        })
-        keep = ["name", "change_pct", "up_count", "down_count",
-                "leading_stock", "leading_change"]
-        for c in keep:
-            if c not in df.columns:
-                df[c] = 0
-        df = df[keep].copy()
-        for num_col in ["change_pct", "up_count", "down_count", "leading_change"]:
-            df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
-        df = df.sort_values("change_pct", ascending=False).reset_index(drop=True)
-        logger.info(f"[行业板块] 获取 {len(df)} 个行业排名")
-        return df
-    except Exception as e:
-        logger.warning(f"获取行业板块排名失败: {e}")
-        return pd.DataFrame()
+    """获取行业板块排名（带缓存，5分钟有效）"""
+    global _industry_cache, _industry_cache_time
+    
+    import time as time_module
+    now = time_module.time()
+    
+    if _industry_cache is not None and (now - _industry_cache_time) < 300:
+        logger.info(f"[行业板块] 使用缓存数据")
+        return _industry_cache
+    
+    for attempt in range(3):
+        try:
+            time.sleep(1 + attempt)
+            df = ak.stock_board_industry_name_em()
+            if df is None or df.empty:
+                continue
+            df = df.rename(columns={
+                "板块名称": "name", "涨跌幅": "change_pct",
+                "上涨家数": "up_count", "下跌家数": "down_count",
+                "领涨股票": "leading_stock", "领涨股票-涨跌幅": "leading_change",
+            })
+            keep = ["name", "change_pct", "up_count", "down_count",
+                    "leading_stock", "leading_change"]
+            for c in keep:
+                if c not in df.columns:
+                    df[c] = 0
+            df = df[keep].copy()
+            for num_col in ["change_pct", "up_count", "down_count", "leading_change"]:
+                df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
+            df = df.sort_values("change_pct", ascending=False).reset_index(drop=True)
+            logger.info(f"[行业板块] 获取 {len(df)} 个行业排名")
+            _industry_cache = df
+            _industry_cache_time = now
+            return df
+        except Exception as e:
+            logger.warning(f"[行业板块] 尝试 {attempt+1}/3 失败: {e}")
+            if attempt < 2:
+                time.sleep(3)
+    
+    logger.warning("[行业板块] 东方财富接口失败，返回空数据")
+    return pd.DataFrame()
 
 
 def get_emotion_indicators(zt_pool: pd.DataFrame = None,
@@ -335,13 +360,11 @@ def get_emotion_indicators(zt_pool: pd.DataFrame = None,
     """计算情绪指标并判定情绪周期阶段"""
     if zt_pool is None:
         zt_pool = get_zt_pool()
-    if quotes is None:
-        quotes = get_realtime_quotes()
-
+    
     zt_count = len(zt_pool) if not zt_pool.empty else 0
 
     dt_count = 0
-    if not quotes.empty:
+    if quotes is not None and not quotes.empty:
         dt_mask = quotes["change_pct"] <= -9.5
         dt_count = int(dt_mask.sum())
 

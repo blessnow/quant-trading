@@ -67,6 +67,7 @@ class TradingAgent:
                     tools=TOOL_DEFINITIONS,
                     messages=messages,
                     max_tokens=4096,
+                    timeout=1200.0,
                 )
             except Exception as e:
                 logger.error(f"[Agent] LLM 调用失败: {e}")
