@@ -66,41 +66,55 @@ class YuGeValue(BaseStrategy):
         return signals
 
     def _collect_market_data(self) -> dict:
+        from concurrent.futures import ThreadPoolExecutor
+        
         data = {
             "策略": "鱼哥价值投资 — 资源周期股深度分析",
             "关注领域": "资源股、周期股、央企国企",
         }
 
+        def fetch_industry():
+            try:
+                return get_industry_board_ranking()
+            except Exception:
+                return None
+        
+        def fetch_commodities():
+            try:
+                return get_commodity_prices()
+            except Exception:
+                return None
+        
+        # 并行获取行业和商品数据
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            industry_future = executor.submit(fetch_industry)
+            commodities_future = executor.submit(fetch_commodities)
+            
+            industry = industry_future.result()
+            commodities = commodities_future.result()
+
         # 行业板块排名（关注资源类行业）
-        try:
-            industry = get_industry_board_ranking()
-            if not industry.empty:
-                resource_keywords = ["橡胶", "矿产", "有色金属", "煤炭", "钢铁", "石油",
-                                     "化工", "黄金", "铜", "铝", "锂", "钼", "稀土",
-                                     "种植", "林业", "渔业", "农牧"]
-                resource_boards = []
-                for _, r in industry.iterrows():
-                    name = str(r["name"])
-                    if any(kw in name for kw in resource_keywords):
-                        resource_boards.append(
-                            f"{name}: 涨跌{r['change_pct']:+.2f}% "
-                            f"涨{int(r['up_count'])}/跌{int(r['down_count'])}"
-                        )
-                if resource_boards:
-                    data["资源板块行情"] = resource_boards[:10]
-        except Exception as e:
-            logger.debug(f"[鱼哥] 获取行业排名失败: {e}")
+        if industry is not None and not industry.empty:
+            resource_keywords = ["橡胶", "矿产", "有色金属", "煤炭", "钢铁", "石油",
+                                 "化工", "黄金", "铜", "铝", "锂", "钼", "稀土",
+                                 "种植", "林业", "渔业", "农牧"]
+            resource_boards = []
+            for _, r in industry.iterrows():
+                name = str(r["name"])
+                if any(kw in name for kw in resource_keywords):
+                    resource_boards.append(
+                        f"{name}: 涨跌{r['change_pct']:+.2f}% "
+                        f"涨{int(r['up_count'])}/跌{int(r['down_count'])}"
+                    )
+            if resource_boards:
+                data["资源板块行情"] = resource_boards[:10]
 
         # 大宗商品价格
-        try:
-            commodities = get_commodity_prices()
-            if commodities:
-                data["大宗商品价格"] = [
-                    f"{name}: {info.get('price', 'N/A')}" if isinstance(info, dict) else f"{name}: {info}"
-                    for name, info in commodities.items()
-                ]
-        except Exception as e:
-            logger.debug(f"[鱼哥] 获取商品价格失败: {e}")
+        if commodities:
+            data["大宗商品价格"] = [
+                f"{name}: {info.get('price', 'N/A')}" if isinstance(info, dict) else f"{name}: {info}"
+                for name, info in commodities.items()
+            ]
 
         return data
 
@@ -108,14 +122,23 @@ class YuGeValue(BaseStrategy):
         signals = []
         max_pos = self.params.get("max_position_pct", 0.70)
 
-        # 卖出信号
+        # 收集所有需要获取价格的股票代码
+        sell_codes = [str(s.get("code", "")) for s in result.sell_list]
+        buy_codes = [str(t.get("code", "")) for t in result.targets if len(str(t.get("code", ""))) == 6]
+        all_codes = list(set(sell_codes + buy_codes))
+        
+        # 批量获取价格
+        from data.a_share_provider import get_batch_prices
+        prices = get_batch_prices(all_codes) if all_codes else {}
+        logger.info(f"[鱼哥] 批量获取 {len(all_codes)} 只股票价格，成功 {len(prices)} 只")
+
+        # 危出信号
         for s in result.sell_list:
             code = str(s.get("code", ""))
             reason = s.get("reason", "LLM判断卖出")
             for pos in context.current_positions:
                 if pos.symbol == code:
-                    from data.a_share_provider import get_current_price as _get_price
-                    price = _get_price(code) or pos.current_price or pos.avg_cost
+                    price = prices.get(code) or pos.current_price or pos.avg_cost
                     signals.append(Signal(
                         signal_type=SignalType.SELL,
                         symbol=code, market=Market.A_SHARE,
@@ -135,14 +158,11 @@ class YuGeValue(BaseStrategy):
             if not code or len(code) != 6:
                 continue
 
-            # 获取实时价格
-            from data.a_share_provider import get_current_price
-            price = get_current_price(code)
+            price = prices.get(code)
             if not price or price <= 0:
                 logger.warning(f"[鱼哥] 无法获取 {code} 价格，跳过")
                 continue
 
-            # 已持有的不重复买
             if any(p.symbol == code for p in context.current_positions):
                 logger.info(f"[鱼哥] {code} 已持有，跳过")
                 continue

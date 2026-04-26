@@ -1,10 +1,17 @@
 """美股数据提供层"""
+import asyncio
+import os
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import pandas as pd
+import requests
 import yfinance as yf
 from loguru import logger
 
+_executor = ThreadPoolExecutor(max_workers=5)
 _history_cache: dict[str, pd.DataFrame] = {}
 
 # 关注的美股标的池
@@ -56,7 +63,8 @@ def get_current_price(symbol: str) -> Optional[float]:
 def get_realtime_quotes(symbols: list[str] = None) -> pd.DataFrame:
     symbols = symbols or DEFAULT_UNIVERSE
     items = []
-    for sym in symbols:
+    
+    def fetch_one(sym: str) -> dict | None:
         try:
             ticker = yf.Ticker(sym)
             info = ticker.fast_info
@@ -64,7 +72,7 @@ def get_realtime_quotes(symbols: list[str] = None) -> pd.DataFrame:
             prev = info.previous_close if hasattr(info, 'previous_close') else None
             if price and prev and prev > 0:
                 change_pct = round((price - prev) / prev * 100, 2)
-                items.append({
+                return {
                     "symbol": sym,
                     "price": price,
                     "pre_close": prev,
@@ -72,9 +80,16 @@ def get_realtime_quotes(symbols: list[str] = None) -> pd.DataFrame:
                     "high": info.day_high if hasattr(info, 'day_high') else price,
                     "low": info.day_low if hasattr(info, 'day_low') else price,
                     "volume": info.last_volume if hasattr(info, 'last_volume') else 0,
-                })
+                }
         except Exception:
             pass
+        return None
+    
+    for sym in symbols:
+        result = fetch_one(sym)
+        if result:
+            items.append(result)
+    
     if not items:
         return pd.DataFrame()
     logger.info(f"[美股行情] 获取 {len(items)} 只股票报价")
@@ -160,24 +175,92 @@ def get_index_history(symbol: str = "^NDX", days: int = 90) -> list[dict]:
     cache_key = f"idx_{symbol}_{days}"
     if cache_key in _history_cache:
         return _history_cache[cache_key]
-    try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period=f"{days + 10}d", interval="1d")
-        if df.empty:
-            return []
-        df = df.tail(days).reset_index()
-        df.columns = [c.lower().replace(" ", "_") for c in df.columns]
-        result = []
-        for _, row in df.iterrows():
-            date_val = row.get("date")
-            if hasattr(date_val, "strftime"):
-                date_str = date_val.strftime("%Y-%m-%d")
-            else:
-                date_str = str(date_val)[:10]
-            result.append({"date": date_str, "close": float(row["close"])})
+    
+    result = _get_index_history_yfinance(symbol, days)
+    if result:
         _history_cache[cache_key] = result
-        logger.info(f"[美股指数] {symbol} 获取 {len(result)} 条数据")
         return result
+    
+    logger.warning(f"[美股指数] yfinance失败，尝试tushare备用")
+    result = _get_index_history_tushare(symbol, days)
+    if result:
+        _history_cache[cache_key] = result
+    return result
+
+
+def _get_index_history_yfinance(symbol: str, days: int) -> list[dict]:
+    """yfinance获取指数历史"""
+    try:
+        import time
+        for attempt in range(3):
+            try:
+                time.sleep(2 + attempt * 2)
+                ticker = yf.Ticker(symbol)
+                df = ticker.history(period=f"{days + 10}d", interval="1d")
+                if df.empty:
+                    continue
+                df = df.tail(days).reset_index()
+                df.columns = [c.lower().replace(" ", "_") for c in df.columns]
+                result = []
+                for _, row in df.iterrows():
+                    date_val = row.get("date")
+                    if hasattr(date_val, "strftime"):
+                        date_str = date_val.strftime("%Y-%m-%d")
+                    else:
+                        date_str = str(date_val)[:10]
+                    result.append({"date": date_str, "close": float(row["close"])})
+                logger.info(f"[美股指数] {symbol} 获取 {len(result)} 条数据")
+                return result
+            except Exception as e:
+                if "Rate limited" in str(e) and attempt < 2:
+                    logger.warning(f"[美股指数] yfinance限流，等待重试...")
+                    time.sleep(10)
+                else:
+                    raise
+        return []
     except Exception as e:
         logger.error(f"获取指数 {symbol} 历史失败: {e}")
+        return []
+
+
+def _get_index_history_tushare(symbol: str, days: int) -> list[dict]:
+    """stooq备用获取美股指数历史"""
+    try:
+        import time
+        from datetime import datetime, timedelta
+        
+        symbol_map = {
+            "^NDX": "^ndq",
+            "^GSPC": "^spx",
+            "^DJI": "^dji",
+        }
+        stooq_symbol = symbol_map.get(symbol)
+        if not stooq_symbol:
+            return []
+        
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days + 10)
+        
+        url = f"https://stooq.com/q/d/l/?s={stooq_symbol}&d1={start_date.strftime('%Y%m%d')}&d2={end_date.strftime('%Y%m%d')}&i=d"
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if r.status_code != 200 or not r.text:
+            return []
+        
+        lines = r.text.strip().split('\n')
+        if len(lines) < 2:
+            return []
+        
+        result = []
+        for line in lines[1:]:
+            parts = line.split(',')
+            if len(parts) >= 5:
+                date_str = parts[0]
+                close = float(parts[4])
+                result.append({"date": date_str, "close": close})
+        
+        result = result[-days:]
+        logger.info(f"[美股指数-Stooq] {symbol} 获取 {len(result)} 条数据")
+        return result
+    except Exception as e:
+        logger.error(f"[美股指数-Stooq] 失败: {e}")
         return []

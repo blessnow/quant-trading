@@ -183,43 +183,46 @@ class ChatAgent:
             tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
             if tool_use_blocks:
                 logger.info(f"[ChatAgent] 需要调用 {len(tool_use_blocks)} 个工具: {[b.name for b in tool_use_blocks]}")
-                for idx, block in enumerate(tool_use_blocks):
-                    name = block.name
-                    args = block.input or {}
-                    logger.info(f"[ChatAgent] 工具 {idx+1}/{len(tool_use_blocks)}: {name}")
+                
+                # 合并相同工具的多次调用为批量调用
+                merged_calls = self._merge_tool_calls(tool_use_blocks)
+                
+                for idx, (merged_name, merged_args, merged_blocks) in enumerate(merged_calls):
+                    logger.info(f"[ChatAgent] 工具 {idx+1}/{len(merged_calls)}: {merged_name} ({len(merged_blocks)} 个标的)")
 
                     # 发送工具调用事件
                     yield {
                         "type": "tool_call",
-                        "name": name,
-                        "args": args,
+                        "name": merged_name,
+                        "args": merged_args,
                     }
 
                     # 执行工具
                     try:
-                        logger.info(f"[ChatAgent] 开始执行工具: {name}")
-                        result = self._execute_tool(name, args, DDGS)
-                        logger.info(f"[ChatAgent] 工具 {name} 返回 {len(result)} 字符")
+                        logger.info(f"[ChatAgent] 开始执行工具: {merged_name}")
+                        result = self._execute_tool(merged_name, merged_args, DDGS)
+                        logger.info(f"[ChatAgent] 工具 {merged_name} 返回 {len(result)} 字符")
                         yield {
                             "type": "tool_result",
-                            "name": name,
-                            "result": result[:2000],  # 截断
+                            "name": merged_name,
+                            "result": result[:2000],
                         }
                     except Exception as e:
-                        logger.error(f"[ChatAgent] 工具 {name} 执行错误: {e}")
+                        logger.error(f"[ChatAgent] 工具 {merged_name} 执行错误: {e}")
                         result = f"工具执行错误: {e}"
-                        yield {"type": "tool_result", "name": name, "result": result}
+                        yield {"type": "tool_result", "name": merged_name, "result": result}
 
-                    # 添加到消息
+                    # 为每个原始 block 添加结果
                     api_messages.append({"role": "assistant", "content": response.content})
-                    api_messages.append({
-                        "role": "user",
-                        "content": [{
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result[:4000],
-                        }]
-                    })
+                    for block in merged_blocks:
+                        api_messages.append({
+                            "role": "user",
+                            "content": [{
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": result[:4000],
+                            }]
+                        })
                 
                 logger.info(f"[ChatAgent] 所有工具执行完成，进入下一轮")
             else:
@@ -245,6 +248,33 @@ class ChatAgent:
 
         yield {"type": "error", "content": "超过最大思考轮数"}
 
+    def _merge_tool_calls(self, tool_use_blocks) -> list:
+        """合并相同工具的多次调用为批量调用"""
+        from collections import defaultdict
+        
+        # 按工具名分组
+        groups = defaultdict(list)
+        for block in tool_use_blocks:
+            groups[block.name].append(block)
+        
+        merged = []
+        for name, blocks in groups.items():
+            if name == "get_stock_fundamentals" and len(blocks) > 1:
+                codes = [b.input.get("code", "") for b in blocks if b.input.get("code")]
+                merged.append(("get_batch_fundamentals", {"codes": codes}, blocks))
+            elif name == "get_pb_ratio" and len(blocks) > 1:
+                codes = [b.input.get("code", "") for b in blocks if b.input.get("code")]
+                merged.append(("get_batch_pb_ratio", {"codes": codes}, blocks))
+            elif name == "search_web" and len(blocks) > 1:
+                # 合并多个搜索为一个批量搜索
+                queries = [b.input.get("query", "") for b in blocks if b.input.get("query")]
+                merged.append(("batch_search_web", {"queries": queries}, blocks))
+            else:
+                for block in blocks:
+                    merged.append((name, block.input or {}, [block]))
+        
+        return merged
+
     def _execute_tool(self, name: str, args: dict, DDGS) -> str:
         """执行工具"""
         if name == "search_web":
@@ -257,8 +287,12 @@ class ChatAgent:
             return self._tool_get_positions()
         elif name == "get_stock_fundamentals":
             return self._tool_get_stock_fundamentals(args.get("code", ""))
+        elif name == "get_batch_fundamentals":
+            return self._tool_get_batch_fundamentals(args.get("codes", []))
         elif name == "get_pb_ratio":
             return self._tool_get_pb_ratio(args.get("code", ""))
+        elif name == "get_batch_pb_ratio":
+            return self._tool_get_batch_pb_ratio(args.get("codes", []))
         elif name == "get_commodity_prices":
             return self._tool_get_commodity_prices()
         return f"未知工具: {name}"
@@ -364,10 +398,57 @@ class ChatAgent:
             data["financials"] = data["financials"][:3]
         return json.dumps(data, ensure_ascii=False, default=str)[:5000]
 
+    def _tool_get_batch_fundamentals(self, codes: list) -> str:
+        """并行获取多只股票的基本面数据"""
+        from concurrent.futures import ThreadPoolExecutor
+        
+        def fetch_one(code):
+            try:
+                data = get_stock_fundamentals(str(code).strip())
+                if "financials" in data and isinstance(data["financials"], list):
+                    data["financials"] = data["financials"][:2]
+                return code, data
+            except Exception as e:
+                return code, {"error": str(e)}
+        
+        results = {}
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(fetch_one, code) for code in codes[:10]]
+            for future in futures:
+                try:
+                    code, data = future.result()
+                    results[code] = data
+                except Exception:
+                    pass
+        
+        return json.dumps(results, ensure_ascii=False, default=str)[:8000]
+
     def _tool_get_pb_ratio(self, code: str) -> str:
         code = str(code).strip()
         data = get_pb_ratio(code)
         return json.dumps(data, ensure_ascii=False, default=str)
+
+    def _tool_get_batch_pb_ratio(self, codes: list) -> str:
+        """并行获取多只股票的估值数据"""
+        from concurrent.futures import ThreadPoolExecutor
+        
+        def fetch_one(code):
+            try:
+                return code, get_pb_ratio(str(code).strip())
+            except Exception as e:
+                return code, {"error": str(e)}
+        
+        results = {}
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(fetch_one, code) for code in codes[:10]]
+            for future in futures:
+                try:
+                    code, data = future.result()
+                    results[code] = data
+                except Exception:
+                    pass
+        
+        return json.dumps(results, ensure_ascii=False, default=str)[:4000]
 
     def _tool_get_commodity_prices(self) -> str:
         data = get_commodity_prices()

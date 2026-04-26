@@ -85,19 +85,27 @@ class YuGeAgent:
         return ValueAgentResult(action="hold", error="超过最大思考轮数")
 
     def _execute_tools(self, tool_use_blocks) -> list:
+        """并行执行多个工具调用"""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
         results = []
-        for block in tool_use_blocks:
+        
+        def execute_single_tool(block):
             name = block.name
             args = block.input or {}
             logger.info(f"[鱼哥Agent] 调用 {name}({json.dumps(args, ensure_ascii=False)[:100]})")
-
+            
             try:
                 if name == "search_web":
                     output = _tool_search_web(args.get("query", ""))
                 elif name == "get_stock_fundamentals":
                     output = _tool_get_stock_fundamentals(args.get("code", ""))
+                elif name == "get_batch_fundamentals":
+                    output = _tool_get_batch_fundamentals(args.get("codes", []))
                 elif name == "get_pb_ratio":
                     output = _tool_get_pb_ratio(args.get("code", ""))
+                elif name == "get_batch_pb_ratio":
+                    output = _tool_get_batch_pb_ratio(args.get("codes", []))
                 elif name == "get_commodity_prices":
                     output = _tool_get_commodity_prices()
                 elif name == "get_positions":
@@ -107,12 +115,29 @@ class YuGeAgent:
             except Exception as e:
                 output = f"工具执行错误: {e}"
                 logger.error(f"[鱼哥Agent] {name} 执行失败: {e}")
-
-            results.append({
+            
+            return {
                 "type": "tool_result",
                 "tool_use_id": block.id,
                 "content": str(output)[:6000],
-            })
+            }
+        
+        if len(tool_use_blocks) == 1:
+            results.append(execute_single_tool(tool_use_blocks[0]))
+        else:
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(execute_single_tool, block): block for block in tool_use_blocks}
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except Exception as e:
+                        block = futures[future]
+                        results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": f"工具执行错误: {e}",
+                        })
+        
         return results
 
     def _parse_decision(self, text: str) -> ValueAgentResult:
@@ -188,6 +213,21 @@ TOOL_DEFINITIONS = [
         }
     },
     {
+        "name": "get_batch_fundamentals",
+        "description": "批量获取多只股票的基本面数据，比逐个调用更高效。返回每只股票的公司信息、财务数据摘要。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "codes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "股票代码列表，如 ['601118', '600028']"
+                }
+            },
+            "required": ["codes"]
+        }
+    },
+    {
         "name": "get_pb_ratio",
         "description": "获取个股估值数据：当前价格、PB（市净率）、PE（市盈率）、每股净资产、每股收益。用于第六步估值判断。",
         "input_schema": {
@@ -196,6 +236,21 @@ TOOL_DEFINITIONS = [
                 "code": {"type": "string", "description": "6位股票代码，如 601118"}
             },
             "required": ["code"]
+        }
+    },
+    {
+        "name": "get_batch_pb_ratio",
+        "description": "批量获取多只股票的估值数据（PB、PE、价格），比逐个调用更高效。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "codes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "股票代码列表，如 ['601118', '600028']"
+                }
+            },
+            "required": ["codes"]
         }
     },
     {
@@ -230,16 +285,64 @@ def _tool_search_web(query: str) -> str:
 def _tool_get_stock_fundamentals(code: str) -> str:
     code = str(code).strip()
     data = get_stock_fundamentals(code)
-    # financials 是 list，截断到前3期
     if "financials" in data and isinstance(data["financials"], list):
         data["financials"] = data["financials"][:3]
     return json.dumps(data, ensure_ascii=False, default=str)[:5000]
+
+
+def _tool_get_batch_fundamentals(codes: list) -> str:
+    """并行获取多只股票的基本面数据"""
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def fetch_one(code):
+        try:
+            data = get_stock_fundamentals(str(code).strip())
+            if "financials" in data and isinstance(data["financials"], list):
+                data["financials"] = data["financials"][:2]
+            return code, data
+        except Exception as e:
+            return code, {"error": str(e)}
+    
+    results = {}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(fetch_one, code): code for code in codes[:10]}
+        for future in futures.values():
+            try:
+                code, data = future.result()
+                results[code] = data
+            except Exception:
+                pass
+    
+    return json.dumps(results, ensure_ascii=False, default=str)[:8000]
 
 
 def _tool_get_pb_ratio(code: str) -> str:
     code = str(code).strip()
     data = get_pb_ratio(code)
     return json.dumps(data, ensure_ascii=False, default=str)
+
+
+def _tool_get_batch_pb_ratio(codes: list) -> str:
+    """并行获取多只股票的估值数据"""
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def fetch_one(code):
+        try:
+            return code, get_pb_ratio(str(code).strip())
+        except Exception as e:
+            return code, {"error": str(e)}
+    
+    results = {}
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(fetch_one, code): code for code in codes[:10]}
+        for future in futures.values():
+            try:
+                code, data = future.result()
+                results[code] = data
+            except Exception:
+                pass
+    
+    return json.dumps(results, ensure_ascii=False, default=str)[:4000]
 
 
 def _tool_get_commodity_prices() -> str:

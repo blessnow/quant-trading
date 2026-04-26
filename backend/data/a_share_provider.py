@@ -1,5 +1,6 @@
 """A股数据提供层 — 移植自 stock/data_fetcher.py"""
 import math
+import os
 import re
 import time
 from pathlib import Path
@@ -9,6 +10,9 @@ import akshare as ak
 import pandas as pd
 import requests
 from loguru import logger
+
+TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "CxTgvAPvMDFBbwGYPDyyFiqLtdJGMiBNcGkyynOLjDcosQhlMOUIySSUynsxomWV")
+TUSHARE_URL = "http://111.170.34.57:8010/"
 
 HEADERS = {
     "Referer": "https://finance.sina.com.cn",
@@ -239,8 +243,11 @@ def is_at_limit(price: float, pre_close: float, code: str = "", name: str = "") 
 
 def get_trading_dates() -> list[str]:
     try:
-        df = ak.tool_trade_date_hist_sina()
-        return df["trade_date"].dt.strftime("%Y-%m-%d").tolist()
+        df = _retry(ak.tool_trade_date_hist_sina)
+        if df is None or df.empty:
+            return []
+        date_col = df.columns[0]
+        return pd.to_datetime(df[date_col]).dt.strftime("%Y-%m-%d").tolist()
     except Exception as e:
         logger.error(f"获取交易日历失败: {e}")
         return []
@@ -322,36 +329,36 @@ def get_industry_board_ranking() -> pd.DataFrame:
         logger.info(f"[行业板块] 使用缓存数据")
         return _industry_cache
     
-    for attempt in range(3):
-        try:
-            time.sleep(1 + attempt)
-            df = ak.stock_board_industry_name_em()
-            if df is None or df.empty:
-                continue
-            df = df.rename(columns={
-                "板块名称": "name", "涨跌幅": "change_pct",
-                "上涨家数": "up_count", "下跌家数": "down_count",
-                "领涨股票": "leading_stock", "领涨股票-涨跌幅": "leading_change",
-            })
-            keep = ["name", "change_pct", "up_count", "down_count",
-                    "leading_stock", "leading_change"]
-            for c in keep:
-                if c not in df.columns:
-                    df[c] = 0
-            df = df[keep].copy()
-            for num_col in ["change_pct", "up_count", "down_count", "leading_change"]:
-                df[num_col] = pd.to_numeric(df[num_col], errors="coerce").fillna(0)
+    try:
+        df = ak.stock_sector_spot()
+        if df is None or df.empty:
+            return pd.DataFrame()
+        
+        result = []
+        for _, row in df.iterrows():
+            try:
+                change_pct = float(row.get('涨跌幅', 0))
+                result.append({
+                    "name": row.get('板块', ''),
+                    "change_pct": change_pct,
+                    "up_count": 0,
+                    "down_count": 0,
+                    "leading_stock": row.get('股票名称', ''),
+                    "leading_change": float(row.get('个股-涨跌幅', 0)),
+                })
+            except Exception:
+                pass
+        
+        if result:
+            df = pd.DataFrame(result)
             df = df.sort_values("change_pct", ascending=False).reset_index(drop=True)
-            logger.info(f"[行业板块] 获取 {len(df)} 个行业排名")
+            logger.info(f"[行业板块-新浪] 获取 {len(df)} 个行业排名")
             _industry_cache = df
             _industry_cache_time = now
             return df
-        except Exception as e:
-            logger.warning(f"[行业板块] 尝试 {attempt+1}/3 失败: {e}")
-            if attempt < 2:
-                time.sleep(3)
+    except Exception as e:
+        logger.error(f"[行业板块] 获取失败: {e}")
     
-    logger.warning("[行业板块] 东方财富接口失败，返回空数据")
     return pd.DataFrame()
 
 
