@@ -26,8 +26,16 @@ export function EquityChart({ data }: { data: DataPoint[] }) {
     usStock?: number;
   } | null>(null);
 
+  // Get all unique dates from both markets, sorted
+  const allDates = Array.from(new Set(data.map(d => d.date))).sort((a, b) => a.localeCompare(b));
+
   const dedupeByDate = (arr: DataPoint[]) => {
     const byDate: Record<string, DataPoint> = {};
+    // Sort by time first (if exists), then take the latest for each date
+    arr.sort((a, b) => {
+      if (a.time && b.time) return a.time.localeCompare(b.time);
+      return 0;
+    });
     arr.forEach((d) => { byDate[d.date] = d; });
     return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
   };
@@ -42,45 +50,47 @@ export function EquityChart({ data }: { data: DataPoint[] }) {
   const w = 800, h = 240, px = 55, py = 15;
   const chartW = w - 2 * px;
 
-  const getX = (arr: DataPoint[], i: number) => {
-    if (arr.length === 1) return (px + w - px) / 2;
-    return px + (i / (arr.length - 1)) * (w - 2 * px);
+  // Unified X coordinate based on all dates (both markets share same date axis)
+  const getX = (date: string) => {
+    const idx = allDates.indexOf(date);
+    if (allDates.length === 1) return (px + w - px) / 2;
+    return px + (idx / (allDates.length - 1)) * (w - 2 * px);
   };
 
   const getY = (d: DataPoint) =>
     h - py - ((d.total_value - minV) / range) * (h - 2 * py);
 
   const pts = (arr: DataPoint[]) =>
-    arr.map((d, i) => `${getX(arr, i)},${getY(d)}`).join(" ");
+    arr.map((d) => `${getX(d.date)},${getY(d)}`).join(" ");
 
   const aShareByDate: Record<string, { value: number; x: number; y: number }> = {};
-  aShare.forEach((d, i) => {
-    aShareByDate[d.date] = { value: d.total_value, x: getX(aShare, i), y: getY(d) };
+  aShare.forEach((d) => {
+    aShareByDate[d.date] = { value: d.total_value, x: getX(d.date), y: getY(d) };
   });
   const usStockByDate: Record<string, { value: number; x: number; y: number }> = {};
-  usStock.forEach((d, i) => {
-    usStockByDate[d.date] = { value: d.total_value, x: getX(usStock, i), y: getY(d) };
+  usStock.forEach((d) => {
+    usStockByDate[d.date] = { value: d.total_value, x: getX(d.date), y: getY(d) };
   });
 
   // All hover candidates for X-proximity lookup
   const candidates: { svgX: number; date: string }[] = [];
-  aShare.forEach((d, i) => candidates.push({ svgX: getX(aShare, i), date: d.date }));
-  usStock.forEach((d, i) => candidates.push({ svgX: getX(usStock, i), date: d.date }));
+  aShare.forEach((d) => candidates.push({ svgX: getX(d.date), date: d.date }));
+  usStock.forEach((d) => candidates.push({ svgX: getX(d.date), date: d.date }));
 
-  const getTimeLabels = (arr: DataPoint[]) => {
+  const getTimeLabels = () => {
     const labels: { x: number; label: string }[] = [];
-    const step = Math.max(1, Math.floor(arr.length / 6));
-    for (let i = 0; i < arr.length; i += step) {
-      labels.push({ x: getX(arr, i), label: arr[i].date.slice(5) });
+    const step = Math.max(1, Math.floor(allDates.length / 6));
+    for (let i = 0; i < allDates.length; i += step) {
+      labels.push({ x: getX(allDates[i]), label: allDates[i].slice(5) });
     }
     return labels;
   };
 
-  const timeLabels = getTimeLabels(aShare.length >= 2 ? aShare : usStock);
+  const timeLabels = getTimeLabels();
 
   const allPoints: { x: number; y: number; date: string; market: string }[] = [];
-  aShare.forEach((d, i) => allPoints.push({ x: getX(aShare, i), y: getY(d), date: d.date, market: "A_SHARE" }));
-  usStock.forEach((d, i) => allPoints.push({ x: getX(usStock, i), y: getY(d), date: d.date, market: "US_STOCK" }));
+  aShare.forEach((d) => allPoints.push({ x: getX(d.date), y: getY(d), date: d.date, market: "A_SHARE" }));
+  usStock.forEach((d) => allPoints.push({ x: getX(d.date), y: getY(d), date: d.date, market: "US_STOCK" }));
 
   return (
     <div ref={containerRef} className="relative">
@@ -158,8 +168,8 @@ export function EquityChart({ data }: { data: DataPoint[] }) {
         {usStock.length >= 2 && <polyline points={pts(usStock)} fill="none" stroke="#3b82f6" strokeWidth={2} />}
 
         {/* Single points */}
-        {aShare.length === 1 && <circle cx={getX(aShare, 0)} cy={getY(aShare[0])} r={6} fill="#ef4444" />}
-        {usStock.length === 1 && <circle cx={getX(usStock, 0)} cy={getY(usStock[0])} r={6} fill="#3b82f6" />}
+        {aShare.length === 1 && <circle cx={getX(aShare[0].date)} cy={getY(aShare[0])} r={6} fill="#ef4444" />}
+        {usStock.length === 1 && <circle cx={getX(usStock[0].date)} cy={getY(usStock[0])} r={6} fill="#3b82f6" />}
 
         {/* Data dots */}
         {allPoints.map((p, i) => (
