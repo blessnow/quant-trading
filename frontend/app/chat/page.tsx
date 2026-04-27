@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { useRouter } from "next/navigation";
 import StrategySelector from "./components/StrategySelector";
 import SessionList from "./components/SessionList";
 import MessageList from "./components/MessageList";
@@ -32,6 +34,8 @@ interface Message {
 }
 
 export default function ChatPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [currentStrategy, setCurrentStrategy] = useState<Strategy | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -40,6 +44,28 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const isStreamingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push("/auth/login");
+    }
+  }, [user, loading, router]);
+
+  if (loading) {
+    return (
+      <div className="h-[calc(100vh-64px)] flex items-center justify-center">
+        <div className="text-white/50">加载中...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="h-[calc(100vh-64px)] flex items-center justify-center">
+        <div className="text-white/50">请先登录...</div>
+      </div>
+    );
+  }
 
   // 加载策略列表
   useEffect(() => {

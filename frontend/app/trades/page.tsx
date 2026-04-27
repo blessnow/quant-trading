@@ -33,6 +33,7 @@ export default async function TradesPage() {
                   <th className="text-left py-2 font-medium">时间</th>
                   <th className="text-left py-2 font-medium">策略</th>
                   <th className="text-left py-2 font-medium">代码</th>
+                  <th className="text-left py-2 font-medium">名称</th>
                   <th className="text-left py-2 font-medium">方向</th>
                   <th className="text-right py-2 font-medium">价格</th>
                   <th className="text-right py-2 font-medium">数量</th>
@@ -45,17 +46,15 @@ export default async function TradesPage() {
                   <tr key={t.id} className="border-b border-gray-50 hover:bg-gray-50/50">
                     <td className="py-2.5 text-xs text-gray-400">{t.executed_at?.slice(5, 16) || "-"}</td>
                     <td className="py-2.5 text-xs text-gray-500">{t.strategy_name || "-"}</td>
-                    <td className="py-2.5">
-                      <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{t.symbol}</span>
-                      <span className="text-gray-400 ml-1">{t.name}</span>
-                    </td>
+                    <td className="py-2.5 font-mono text-xs font-semibold text-[#1a1a2e]">{t.symbol}</td>
+                    <td className="py-2.5 text-xs text-gray-500">{t.name || "-"}</td>
                     <td className="py-2.5">
                       <span className={`text-xs px-2 py-0.5 rounded font-semibold ${t.side === "BUY" ? "bg-red-50 text-[#e05555]" : "bg-green-50 text-[#22c55e]"}`}>
                         {t.side === "BUY" ? "买入" : "卖出"}
                       </span>
                     </td>
-                    <td className="py-2.5 text-right">{t.price.toFixed(2)}</td>
-                    <td className="py-2.5 text-right">{t.shares}</td>
+                    <td className="py-2.5 text-right font-mono text-[#1a1a2e]">{t.price?.toFixed(2) || "-"}</td>
+                    <td className="py-2.5 text-right text-[#1a1a2e]">{t.shares || "-"}</td>
                     <td className="py-2.5 text-right text-gray-500">¥{fmt(t.notional)}</td>
                     <td className={`py-2.5 text-right font-bold ${t.pnl != null ? pnlColor(t.pnl) : ""}`}>
                       {t.pnl != null ? `${sign(t.pnl)}¥${fmt(t.pnl)}` : "-"}

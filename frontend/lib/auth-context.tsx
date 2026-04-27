@@ -8,6 +8,7 @@ interface User {
   phone?: string;
   avatar_url?: string;
   is_member: boolean;
+  is_admin: boolean;
   member_expire_at?: string;
 }
 
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data);
         // 同步到cookie供Server Component读取
         document.cookie = `is_member=${data.is_member ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
+        document.cookie = `is_admin=${data.is_admin ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
       } else {
         // token无效，清除
         localStorage.removeItem("token");
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(newToken);
     setUser(newUser);
     document.cookie = `is_member=${newUser.is_member ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
+    document.cookie = `is_admin=${newUser.is_admin ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
   };
 
   const logout = () => {
@@ -72,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     document.cookie = "is_member=; path=/; max-age=0";
+    document.cookie = "is_admin=; path=/; max-age=0";
   };
 
   const refreshUser = async () => {

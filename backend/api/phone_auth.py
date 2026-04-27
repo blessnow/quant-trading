@@ -122,7 +122,7 @@ async def login_phone(req: PhoneLoginRequest):
     try:
         # 查找用户
         async with db.execute(
-            "SELECT id, password_hash, nickname, is_member, member_expire_at FROM users WHERE phone=?",
+            "SELECT id, password_hash, nickname, is_member, is_admin, member_expire_at FROM users WHERE phone=?",
             (req.phone,)
         ) as cur:
             user = await cur.fetchone()
@@ -130,7 +130,7 @@ async def login_phone(req: PhoneLoginRequest):
         if not user:
             raise HTTPException(status_code=400, detail="用户不存在")
 
-        user_id, password_hash, nickname, is_member, member_expire = user
+        user_id, password_hash, nickname, is_member, is_admin, member_expire = user
 
         # 验证密码
         if req.password:
@@ -160,6 +160,7 @@ async def login_phone(req: PhoneLoginRequest):
             "user_id": user_id,
             "nickname": nickname,
             "is_member": bool(is_member),
+            "is_admin": bool(is_admin),
             "member_expire_at": member_expire,
         }
     finally:

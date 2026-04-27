@@ -41,7 +41,7 @@ No test, lint, or typecheck commands exist in this repo.
 3. Add cron job in `scheduler.py:setup_jobs()` if needed
 4. Strategy auto-registers on next startup
 
-**Database**: SQLite with WAL mode. Schema defined inline in `database.py:SCHEMA_SQL`. No migration system.
+**Database**: SQLite with WAL mode. Schema in `database.py:SCHEMA_SQL`. Migrations are inline in `init_db()` — check for `ALTER TABLE` blocks when adding columns.
 
 **Frontend API proxy**: `next.config.mjs` rewrites `/api/*` to `BACKEND_URL` (default `localhost:8000`).
 
@@ -69,3 +69,9 @@ Set in `backend/.env` or environment:
 - A-share: `backend/data/a_share_provider.py` uses `akshare`
 - US stock: `backend/data/us_stock_provider.py` uses `yfinance`
 - Market status: `backend/data/market_status.py` — timezone-aware trading day checks
+
+## LLM Integration
+
+- Chat API: `backend/api/chat.py` — strategy-specific chat sessions
+- Agent implementations: `backend/llm/` — uses `anthropic` SDK
+- Requires `ANTHROPIC_API_KEY` env var for LLM features

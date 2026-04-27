@@ -82,13 +82,14 @@ async def login(req: LoginRequest):
     db = await get_db()
     try:
         # 查找或创建用户
-        async with db.execute("SELECT id, is_member, member_expire_at FROM users WHERE openid=?", (openid,)) as cur:
+        async with db.execute("SELECT id, is_member, is_admin, member_expire_at FROM users WHERE openid=?", (openid,)) as cur:
             user = await cur.fetchone()
 
         if user:
             user_id = user[0]
             is_member = bool(user[1])
-            member_expire = user[2]
+            is_admin = bool(user[2])
+            member_expire = user[3]
         else:
             import asyncio
             await db.execute(
@@ -100,6 +101,7 @@ async def login(req: LoginRequest):
                 user = await cur.fetchone()
             user_id = user[0]
             is_member = False
+            is_admin = False
             member_expire = None
 
         token = _create_token(user_id, openid)
@@ -108,6 +110,7 @@ async def login(req: LoginRequest):
             "token": token,
             "user_id": user_id,
             "is_member": is_member,
+            "is_admin": is_admin,
             "member_expire_at": member_expire,
         }
     finally:
@@ -147,7 +150,7 @@ async def get_me(authorization: Optional[str] = Header(None)):
     db = await get_db()
     try:
         async with db.execute(
-            "SELECT id, openid, phone, nickname, avatar_url, is_member, member_expire_at, login_type, created_at FROM users WHERE id=?",
+            "SELECT id, openid, phone, nickname, avatar_url, is_member, is_admin, member_expire_at, login_type, created_at FROM users WHERE id=?",
             (user["user_id"],)
         ) as cur:
             row = await cur.fetchone()
@@ -160,9 +163,10 @@ async def get_me(authorization: Optional[str] = Header(None)):
             "nickname": row[3],
             "avatar_url": row[4],
             "is_member": bool(row[5]),
-            "member_expire_at": row[6],
-            "login_type": row[7],
-            "created_at": row[8],
+            "is_admin": bool(row[6]),
+            "member_expire_at": row[7],
+            "login_type": row[8],
+            "created_at": row[9],
         }
     finally:
         await db.close()

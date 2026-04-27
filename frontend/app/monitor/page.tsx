@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { api } from "@/lib/api-client";
 import { RealtimeLogs } from "./components/RealtimeLogs";
+import { LoginGuard } from "@/app/components/LoginGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,18 @@ async function getStrategyLogs() {
 }
 
 export default async function MonitorPage() {
+  const cookieStore = await cookies();
+  const isAdmin = cookieStore.get("is_admin")?.value === "true";
+
+  if (!isAdmin) {
+    return (
+      <div className="glass-card p-8 text-center">
+        <div className="text-lg font-semibold text-white mb-2">无权限访问</div>
+        <div className="text-sm text-white/50">系统监控仅对管理员开放</div>
+      </div>
+    );
+  }
+
   const [health, scheduler, logs] = await Promise.all([
     getHealth(),
     getSchedulerJobs(),

@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS users (
     web_openid  TEXT UNIQUE,
     unionid     TEXT UNIQUE,
     is_member   INTEGER NOT NULL DEFAULT 0,
+    is_admin    INTEGER NOT NULL DEFAULT 0,
     member_expire_at TEXT,
     last_login_at TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
@@ -329,6 +330,15 @@ async def init_db():
         await db.execute("ALTER TABLE notification_config ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
         await db.commit()
         logging.info("[数据库] notification_config 表迁移完成：新增 user_id 列")
+
+    # 迁移：users 表新增 is_admin 字段
+    try:
+        async with db.execute("SELECT is_admin FROM users LIMIT 1") as cur:
+            await cur.fetchone()
+    except aiosqlite.OperationalError:
+        await db.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        await db.commit()
+        logging.info("[数据库] users 表迁移完成：新增 is_admin 列")
 
     # 关闭初始化连接
     await db.close()

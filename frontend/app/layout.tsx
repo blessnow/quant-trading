@@ -1,5 +1,6 @@
 import "./globals.css";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { AuthProvider } from "@/lib/auth-context";
 import { UserNav } from "@/app/components/UserNav";
 
@@ -9,12 +10,40 @@ const navItems = [
   { href: "/", label: "看板", icon: "📊" },
   { href: "/strategies", label: "策略", icon: "⚡" },
   { href: "/trades", label: "交易", icon: "📈" },
-  { href: "/chat", label: "问财", icon: "💬" },
-  { href: "/monitor", label: "监控", icon: "📡" },
-  { href: "/settings/notifications", label: "设置", icon: "⚙️" },
+  { href: "/chat", label: "问财", icon: "💬", requireLogin: true },
+  { href: "/monitor", label: "监控", icon: "📡", requireAdmin: true },
+  { href: "/settings/notifications", label: "设置", icon: "⚙️", requireLogin: true },
 ];
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+async function NavLinks() {
+  const cookieStore = await cookies();
+  const isAdmin = cookieStore.get("is_admin")?.value === "true";
+  const isLoggedIn = cookieStore.get("is_member")?.value !== undefined || cookieStore.get("is_admin")?.value !== undefined;
+
+  return (
+    <div className="flex gap-1">
+      {navItems.map((item) => {
+        if (item.requireAdmin && !isAdmin) return null;
+        if (item.requireLogin && !isLoggedIn) return null;
+        return (
+          <Link
+            key={item.href}
+            href={item.href}
+            className="nav-link"
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  const isAdmin = cookieStore.get("is_admin")?.value === "true";
+  const isLoggedIn = cookieStore.get("is_member")?.value !== undefined || cookieStore.get("is_admin")?.value !== undefined;
+
   return (
     <html lang="zh">
       <body>
@@ -32,15 +61,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 </div>
                 {/* 导航链接 */}
                 <div className="flex gap-1">
-                  {navItems.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="nav-link"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
+                  {navItems.map((item) => {
+                    if (item.requireAdmin && !isAdmin) return null;
+                    if (item.requireLogin && !isLoggedIn) return null;
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="nav-link"
+                      >
+                        {item.label}
+                      </Link>
+                    );
+                  })}
                 </div>
               </div>
               <div className="flex items-center gap-4">

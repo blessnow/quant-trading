@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { useRouter } from "next/navigation";
 
 const channels = [
   { id: "telegram", name: "Telegram", icon: "📱" },
@@ -15,6 +17,8 @@ interface Toast {
 }
 
 export default function NotificationSettingsPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
   const [configs, setConfigs] = useState<Record<string, any>>({
     telegram: { bot_token: "", chat_id: "", enabled: false },
     wechat: { webhook_url: "", enabled: false },
@@ -29,8 +33,14 @@ export default function NotificationSettingsPage() {
   });
   const [saving, setSaving] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadingConfigs, setLoadingConfigs] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push("/auth/login");
+    }
+  }, [user, loading, router]);
 
   const showToast = (message: string, type: "success" | "error" | "info" = "info") => {
     const id = Date.now();
@@ -41,6 +51,7 @@ export default function NotificationSettingsPage() {
   };
 
   useEffect(() => {
+    if (!user) return;
     const loadConfigs = async () => {
       try {
         const token = localStorage.getItem("token");
@@ -64,11 +75,11 @@ export default function NotificationSettingsPage() {
       } catch (e) {
         console.error("加载配置失败:", e);
       } finally {
-        setLoading(false);
+        setLoadingConfigs(false);
       }
     };
     loadConfigs();
-  }, []);
+  }, [user]);
 
   const validateConfig = (channel: string, config: any): string | null => {
     if (channel === "telegram") {
@@ -155,8 +166,17 @@ export default function NotificationSettingsPage() {
     }
   };
 
-  if (loading) {
+  if (loading || loadingConfigs) {
     return <div className="text-white/50 p-6">加载中...</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="glass-card p-8 text-center">
+        <div className="text-lg font-semibold text-white mb-2">请先登录</div>
+        <div className="text-sm text-white/50">通知设置需要登录后才能使用</div>
+      </div>
+    );
   }
 
   return (

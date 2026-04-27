@@ -60,6 +60,7 @@ function LoginForm() {
           id: res.user_id,
           nickname: res.nickname,
           is_member: res.is_member,
+          is_admin: res.is_admin || false,
           member_expire_at: res.member_expire_at,
         });
         const redirect = searchParams.get("redirect") || "/";

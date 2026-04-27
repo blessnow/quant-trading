@@ -1,3 +1,4 @@
+.opencode
 __pycache__/
 *.pyc
 *.pyo
@@ -14,3 +15,4 @@ frontend/node_modules/
 miniapp/node_modules/
 backend/venv/
 backend/.venv/
+.gstack/

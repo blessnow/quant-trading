@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { api } from "@/lib/api-client";
+import { EquityChart } from "./components/EquityChart";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 30;
@@ -109,7 +110,7 @@ export default async function Dashboard() {
           </div>
         </div>
         {equityCurve.curve && equityCurve.curve.length >= 2 ? (
-          <Chart data={equityCurve.curve} />
+          <EquityChart data={equityCurve.curve} />
         ) : (
           <div className="h-48 flex items-center justify-center text-white/40 text-sm">
             收盘后将生成净值曲线
@@ -247,39 +248,5 @@ export default async function Dashboard() {
         </div>
       )}
     </div>
-  );
-}
-
-function Chart({ data }: { data: { market: string; total_value: number; date: string }[] }) {
-  const aShare = data.filter((d) => d.market === "A_SHARE");
-  const usStock = data.filter((d) => d.market === "US_STOCK");
-  const allVals = data.map((d) => d.total_value);
-  const minV = Math.min(...allVals) * 0.995;
-  const maxV = Math.max(...allVals) * 1.005;
-  const range = maxV - minV || 1;
-  const w = 800, h = 240, px = 55, py = 15;
-
-  function pts(arr: typeof data) {
-    return arr.map((d, i) => {
-      const x = px + (i / Math.max(arr.length - 1, 1)) * (w - 2 * px);
-      const y = h - py - ((d.total_value - minV) / range) * (h - 2 * py);
-      return `${x},${y}`;
-    }).join(" ");
-  }
-
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-48">
-      {[0, 0.25, 0.5, 0.75, 1].map((p) => {
-        const y = h - py - p * (h - 2 * py);
-        return (
-          <g key={p}>
-            <line x1={px} y1={y} x2={w - px} y2={y} stroke="rgba(255,255,255,0.06)" />
-            <text x={px - 5} y={y + 4} textAnchor="end" className="text-[10px] fill-white/40">¥{fmt(minV + p * range)}</text>
-          </g>
-        );
-      })}
-      {aShare.length >= 2 && <polyline points={pts(aShare)} fill="none" stroke="#ef4444" strokeWidth={2} />}
-      {usStock.length >= 2 && <polyline points={pts(usStock)} fill="none" stroke="#3b82f6" strokeWidth={2} />}
-    </svg>
   );
 }

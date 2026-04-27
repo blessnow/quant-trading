@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { api } from "@/lib/api-client";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +24,15 @@ const STRATEGY_META: Record<string, { desc: string; schedule: string }> = {
 };
 
 export default async function StrategiesPage() {
+  const cookieStore = await cookies();
+  const isLoggedIn = cookieStore.get("is_member")?.value !== undefined || cookieStore.get("is_admin")?.value !== undefined;
+
   const [strategies, ranking, trades, positions, logs] = await Promise.all([
     api.strategies.list().catch(() => ({ strategies: [] as any[] })),
     api.strategies.ranking().catch(() => ({ rankings: [] as any[], period: "month" })),
-    api.trades.list(50).catch(() => ({ trades: [] as any[], total: 0 })),
-    api.portfolio.positions().catch(() => ({ positions: [] as any[], total: 0 })),
-    api.strategies.logs(undefined, 50).catch(() => ({ logs: [] as any[], count: 0 })),
+    isLoggedIn ? api.trades.list(50).catch(() => ({ trades: [] as any[], total: 0 })) : Promise.resolve({ trades: [] as any[], total: 0 }),
+    isLoggedIn ? api.portfolio.positions().catch(() => ({ positions: [] as any[], total: 0 })) : Promise.resolve({ positions: [] as any[], total: 0 }),
+    isLoggedIn ? api.strategies.logs(undefined, 50).catch(() => ({ logs: [] as any[], count: 0 })) : Promise.resolve({ logs: [] as any[], count: 0 }),
   ]);
 
   return (
@@ -39,6 +43,16 @@ export default async function StrategiesPage() {
         <h1 className="text-xl font-bold mb-1">策略中心</h1>
         <p className="text-white/40 text-sm">{strategies.strategies.length} 个策略运行中 · 排行榜</p>
       </div>
+
+      {!isLoggedIn && (
+        <div className="glass-card p-8 text-center glow-blue">
+          <div className="text-lg font-semibold text-white mb-2">登录查看完整策略数据</div>
+          <div className="text-sm text-white/50 mb-6">持仓详情、交易记录、执行日志等需要登录后查看</div>
+          <a href="/auth/login" className="btn-primary inline-block">
+            立即登录
+          </a>
+        </div>
+      )}
 
       {/* 排行榜 — 奖牌风格 */}
       {ranking.rankings.length > 0 && (
@@ -66,9 +80,10 @@ export default async function StrategiesPage() {
         </div>
       )}
 
-      {/* 策略详情卡片 */}
-      <div className="space-y-4">
-        {(strategies.strategies || []).map((s: any) => {
+      {/* 策略详情卡片 - 仅登录用户可见 */}
+      {isLoggedIn && (
+        <div className="space-y-4">
+          {(strategies.strategies || []).map((s: any) => {
           const meta = STRATEGY_META[s.name] || { desc: s.description || "", schedule: "-" };
           const strategyTrades = (trades.trades || []).filter((t: any) => t.strategy_name === s.display_name);
           const strategyPositions = (positions.positions || []).filter((p: any) => p.strategy_name === s.display_name);
@@ -147,6 +162,7 @@ export default async function StrategiesPage() {
                           {t.side === "BUY" ? "买入" : "卖出"}
                         </span>
                         <span className="font-mono text-xs text-[#1a1a2e]">{t.symbol}</span>
+                        <span className="text-gray-500 ml-1">{t.name}</span>
                         <span className="text-gray-400">{t.shares}股 @ {t.price.toFixed(2)}</span>
                         <span className={`font-semibold ${t.pnl != null ? pnlColor(t.pnl) : ""}`}>
                           {t.pnl != null ? `${sign(t.pnl)}¥${fmt(t.pnl)}` : "-"}
@@ -163,7 +179,8 @@ export default async function StrategiesPage() {
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
 
       {/* 执行日志 */}
       {logs.logs.length > 0 && (
