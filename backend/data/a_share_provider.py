@@ -2,6 +2,7 @@
 import math
 import os
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -11,8 +12,10 @@ import pandas as pd
 import requests
 from loguru import logger
 
-TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "CxTgvAPvMDFBbwGYPDyyFiqLtdJGMiBNcGkyynOLjDcosQhlMOUIySSUynsxomWV")
-TUSHARE_URL = "http://111.170.34.57:8010/"
+TUSHARE_TOKEN = os.environ.get("TUSHARE_TOKEN", "")
+if not TUSHARE_TOKEN:
+    logger.warning("[配置] TUSHARE_TOKEN 未设置，部分数据接口可能不可用")
+TUSHARE_URL = os.environ.get("TUSHARE_URL", "http://111.170.34.57:8010/")
 
 HEADERS = {
     "Referer": "https://finance.sina.com.cn",
@@ -27,6 +30,7 @@ RETRY_DELAY = 3
 
 _history_cache: dict[str, pd.DataFrame] = {}
 _code_list_cache: list[str] | None = None
+_cache_lock = threading.Lock()
 CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 CODE_LIST_FILE = CACHE_DIR / "a_share_codes.csv"
 
@@ -52,11 +56,13 @@ def _code_to_sina(code: str) -> str:
 
 def get_all_codes() -> list[str]:
     global _code_list_cache
-    if _code_list_cache is not None:
-        return _code_list_cache
+    with _cache_lock:
+        if _code_list_cache is not None:
+            return _code_list_cache
     if CODE_LIST_FILE.exists():
         df = pd.read_csv(CODE_LIST_FILE, dtype={"code": str})
-        _code_list_cache = df["code"].tolist()
+        with _cache_lock:
+            _code_list_cache = df["code"].tolist()
         logger.info(f"[本地缓存] 加载 {len(_code_list_cache)} 只A股代码")
         return _code_list_cache
     try:
@@ -64,7 +70,8 @@ def get_all_codes() -> list[str]:
         codes = df["code"].astype(str).tolist()
         CODE_LIST_FILE.parent.mkdir(parents=True, exist_ok=True)
         df[["code", "name"]].to_csv(CODE_LIST_FILE, index=False)
-        _code_list_cache = codes
+        with _cache_lock:
+            _code_list_cache = codes
         logger.info(f"[akshare] 获取并缓存 {len(codes)} 只A股代码")
         return codes
     except Exception as e:
@@ -138,8 +145,9 @@ def get_realtime_quotes() -> pd.DataFrame:
 
 def get_stock_history(code: str, days: int = 30) -> pd.DataFrame:
     cache_key = f"{code}_{days}"
-    if cache_key in _history_cache:
-        return _history_cache[cache_key].copy()
+    with _cache_lock:
+        if cache_key in _history_cache:
+            return _history_cache[cache_key].copy()
     try:
         sina_code = _code_to_sina(code)
         df = _retry(lambda: ak.stock_zh_a_daily(symbol=sina_code, adjust="qfq"))
@@ -151,7 +159,8 @@ def get_stock_history(code: str, days: int = 30) -> pd.DataFrame:
         if "turnover" in df.columns:
             df["turnover_rate"] = pd.to_numeric(df["turnover"], errors="coerce") * 100
         result = df.tail(days).reset_index(drop=True)
-        _history_cache[cache_key] = result
+        with _cache_lock:
+            _history_cache[cache_key] = result
         return result.copy()
     except Exception as e:
         logger.debug(f"获取 {code} 历史失败: {e}")
@@ -259,8 +268,9 @@ def get_index_history(symbol: str = "sz399006", days: int = 90) -> list[dict]:
     常用symbol: sz399006(创业板指), sh000016(上证50), sh000300(沪深300)
     """
     cache_key = f"idx_{symbol}_{days}"
-    if cache_key in _history_cache:
-        return _history_cache[cache_key]
+    with _cache_lock:
+        if cache_key in _history_cache:
+            return _history_cache[cache_key]
     try:
         df = _retry(lambda: ak.stock_zh_index_daily(symbol=symbol))
         if df is None or df.empty:
@@ -271,7 +281,8 @@ def get_index_history(symbol: str = "sz399006", days: int = 90) -> list[dict]:
             {"date": row["date"].strftime("%Y-%m-%d"), "close": float(row["close"])}
             for _, row in df.iterrows()
         ]
-        _history_cache[cache_key] = result
+        with _cache_lock:
+            _history_cache[cache_key] = result
         logger.info(f"[A股指数] {symbol} 获取 {len(result)} 条数据")
         return result
     except Exception as e:
@@ -611,9 +622,6 @@ def _safe_float(val, div=1.0) -> Optional[float]:
     except (ValueError, TypeError):
         return None
 
-    logger.info(f"[估值] {code} PB={result.get('pb_ratio', 'N/A')} PE={result.get('pe_ratio', 'N/A')}")
-    return result
-
 
 def get_commodity_prices() -> dict:
     """获取大宗商品/资源价格（橡胶、钼、黄金、原油等）"""
@@ -621,31 +629,41 @@ def get_commodity_prices() -> dict:
     warnings.filterwarnings("ignore")
     result = {}
 
-    # 黄金现货
+    # 黄金现货 - 使用新浪接口
     try:
-        df = _retry(lambda: ak.spot_hist_sge(symbol="Au99.99"))
-        if df is not None and not df.empty:
-            latest = df.iloc[-1]
-            result["黄金Au99.99"] = {
-                "price": float(latest.get("收盘价", 0)),
-                "date": str(latest.name) if hasattr(latest, 'name') else "",
-            }
+        url = "https://hq.sinajs.cn/list=shAuTD"
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            import re
+            m = re.search(r'var hq_str_shAuTD="(.+)"', r.text)
+            if m:
+                fields = m.group(1).split(",")
+                if len(fields) >= 6:
+                    result["黄金Au99.99"] = {
+                        "price": float(fields[3]) if fields[3] else 0,
+                        "date": fields[10][:10] if len(fields) > 10 else "",
+                    }
     except Exception:
         pass
 
-    # 银现货
+    # 白银现货 - 使用新浪接口
     try:
-        df = _retry(lambda: ak.spot_hist_sge(symbol="Ag(T+D)"))
-        if df is not None and not df.empty:
-            latest = df.iloc[-1]
-            result["白银Ag(T+D)"] = {
-                "price": float(latest.get("收盘价", 0)),
-                "date": str(latest.name) if hasattr(latest, 'name') else "",
-            }
+        url = "https://hq.sinajs.cn/list=shAgTD"
+        r = requests.get(url, headers=HEADERS, timeout=10)
+        if r.status_code == 200:
+            import re
+            m = re.search(r'var hq_str_shAgTD="(.+)"', r.text)
+            if m:
+                fields = m.group(1).split(",")
+                if len(fields) >= 6:
+                    result["白银Ag(T+D)"] = {
+                        "price": float(fields[3]) if fields[3] else 0,
+                        "date": fields[10][:10] if len(fields) > 10 else "",
+                    }
     except Exception:
         pass
 
-    # 通过搜索获取期货主力合约
+    # 期货主力合约
     try:
         futures_map = {
             "橡胶ru": "ru2509", "螺纹钢rb": "rb2510", "铁矿石i": "i2509",
@@ -656,10 +674,13 @@ def get_commodity_prices() -> dict:
                 df = _retry(lambda s=symbol: ak.futures_main_sina(symbol=s))
                 if df is not None and not df.empty:
                     latest = df.iloc[-1]
-                    result[name] = {
-                        "price": float(latest.get("收盘价", latest.get("close", 0))),
-                        "date": str(latest.get("日期", latest.get("date", ""))),
-                    }
+                    price = latest.get("close") or latest.get("收盘价") or 0
+                    date = latest.get("date") or latest.get("日期") or ""
+                    if price > 0:
+                        result[name] = {
+                            "price": float(price),
+                            "date": str(date),
+                        }
             except Exception:
                 continue
     except Exception:

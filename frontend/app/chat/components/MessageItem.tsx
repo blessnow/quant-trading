@@ -23,8 +23,8 @@ export default function MessageItem({ message, strategyColor }: Props) {
       <div
         className={`max-w-[80%] ${
           isUser
-            ? "bg-blue-500 text-white rounded-2xl rounded-br-md"
-            : "bg-white border rounded-2xl rounded-bl-md"
+            ? "bg-blue-600 text-white rounded-2xl rounded-br-md"
+            : "bg-white/10 border border-white/10 text-white rounded-2xl rounded-bl-md"
         } px-4 py-3`}
       >
         {/* 工具调用展示 */}
@@ -38,13 +38,13 @@ export default function MessageItem({ message, strategyColor }: Props) {
 
         {/* 消息内容 */}
         {message.content && (
-          <div className={`prose prose-sm ${isUser ? "prose-invert" : ""} max-w-none`}>
-            <p className="whitespace-pre-wrap">{message.content}</p>
+          <div className={`prose prose-sm ${isUser ? "prose-invert" : "prose-invert"} max-w-none`}>
+            <p className="whitespace-pre-wrap text-white/90">{message.content}</p>
           </div>
         )}
 
         {/* 时间 */}
-        <p className={`text-xs mt-2 ${isUser ? "text-blue-100" : "text-gray-400"}`}>
+        <p className={`text-xs mt-2 ${isUser ? "text-blue-200" : "text-white/40"}`}>
           {new Date(message.created_at).toLocaleTimeString()}
         </p>
       </div>

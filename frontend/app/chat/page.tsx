@@ -38,6 +38,7 @@ export default function ChatPage() {
   const [currentSession, setCurrentSession] = useState<Session | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const isStreamingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 加载策略列表
@@ -66,6 +67,7 @@ export default function ChatPage() {
 
   // 切换会话时加载消息
   useEffect(() => {
+    if (isStreamingRef.current) return;
     if (currentSession) {
       fetch(`/api/chat/sessions/${currentSession.id}/messages`)
         .then((res) => res.json())
@@ -134,21 +136,27 @@ export default function ChatPage() {
       tool_calls: null,
       created_at: new Date().toISOString(),
     };
-    setMessages([...messages, userMessage]);
+    setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
+    isStreamingRef.current = true;
 
-// SSE 流式响应 - 直接请求后端，绕过 Next.js rewrite
-      let res;
-      try {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-        res = await fetch(`${backendUrl}/api/chat/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ session_id: sessionId, content }),
-        });
+    // SSE 流式响应
+    let res;
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      res = await fetch(`${backendUrl}/api/chat/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+        },
+        body: JSON.stringify({ session_id: sessionId, content }),
+        cache: "no-store",
+      });
     } catch (e) {
       console.error("请求失败:", e);
       setIsLoading(false);
+      isStreamingRef.current = false;
       setMessages((prev) => [
         ...prev,
         {
@@ -164,6 +172,7 @@ export default function ChatPage() {
 
     if (!res.ok) {
       setIsLoading(false);
+      isStreamingRef.current = false;
       setMessages((prev) => [
         ...prev,
         {
@@ -179,106 +188,107 @@ export default function ChatPage() {
 
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
-    let assistantContent = "";
-    let toolCalls: { name: string; args: Record<string, unknown>; result?: string }[] = [];
+    let buffer = "";
+    // 使用本地变量追踪工具调用，避免 React 状态更新延迟问题
+    let localToolCalls: { name: string; args: Record<string, unknown>; result?: string }[] = [];
+    let localContent = "";
+    let hasAssistantMsg = false;
 
     if (reader) {
-      outerLoop:
       while (true) {
         const { done, value } = await reader.read();
-        console.log("[SSE] read:", { done, value: value ? value.length : 0 });
         if (done) break;
 
-        const text = decoder.decode(value);
-        console.log("[SSE] text:", text.substring(0, 200));
-        const lines = text.split("\n");
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            console.log("[SSE] data:", data.substring(0, 100));
-            if (data === "[DONE]") {
-              console.log("[SSE] DONE");
-              break outerLoop;
-            }
+          const trimmedLine = line.trim();
+          if (!trimmedLine || !trimmedLine.startsWith("data: ")) continue;
 
-            try {
-              const event = JSON.parse(data);
-              console.log("[SSE] event:", event.type);
+          const data = trimmedLine.slice(6);
+          if (data === "[DONE]") {
+            setIsLoading(false);
+            isStreamingRef.current = false;
+            return;
+          }
 
-              if (event.type === "tool_call") {
-                toolCalls.push({ name: event.name, args: event.args });
-                setMessages((prev) => {
-                  const last = prev[prev.length - 1];
-                  if (last.role === "assistant") {
-                    return [...prev.slice(0, -1), { ...last, tool_calls: [...toolCalls] }];
-                  }
-                  return [
-                    ...prev,
-                    {
-                      id: Date.now(),
-                      role: "assistant",
-                      content: "",
-                      tool_calls: [...toolCalls],
-                      created_at: new Date().toISOString(),
-                    },
-                  ];
-                });
-              } else if (event.type === "tool_result") {
-                if (toolCalls.length > 0) {
-                  toolCalls[toolCalls.length - 1].result = event.result;
-                  setMessages((prev) => {
-                    const last = prev[prev.length - 1];
-                    if (last.role === "assistant") {
-                      return [...prev.slice(0, -1), { ...last, tool_calls: [...toolCalls] }];
-                    }
-                    return prev;
-                  });
+          try {
+            const event = JSON.parse(data);
+
+            if (event.type === "tool_call") {
+              // 添加到本地工具调用列表
+              localToolCalls.push({ name: event.name, args: event.args, result: undefined });
+              // 立即更新 UI
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.role === "assistant") {
+                  return [...prev.slice(0, -1), { ...last, tool_calls: [...localToolCalls] }];
                 }
-              } else if (event.type === "content") {
-                console.log("[SSE] content received:", event.content.substring(0, 100));
-                assistantContent = event.content;
-                setIsLoading(false);
+                hasAssistantMsg = true;
+                return [...prev, {
+                  id: Date.now(),
+                  role: "assistant",
+                  content: "",
+                  tool_calls: [...localToolCalls],
+                  created_at: new Date().toISOString(),
+                }];
+              });
+            } else if (event.type === "tool_result") {
+              // 更新本地工具调用结果
+              const idx = localToolCalls.findIndex(tc => tc.result === undefined);
+              if (idx !== -1) {
+                localToolCalls[idx].result = event.result;
+                // 立即更新 UI
                 setMessages((prev) => {
                   const last = prev[prev.length - 1];
-                  if (last.role === "assistant") {
-                    return [...prev.slice(0, -1), { ...last, content: assistantContent }];
+                  if (last?.role === "assistant") {
+                    return [...prev.slice(0, -1), { ...last, tool_calls: [...localToolCalls] }];
                   }
-                  return [
-                    ...prev,
-                    {
-                      id: Date.now(),
-                      role: "assistant",
-                      content: assistantContent,
-                      tool_calls: toolCalls.length > 0 ? toolCalls : null,
-                      created_at: new Date().toISOString(),
-                    },
-                  ];
+                  return prev;
                 });
-              } else if (event.type === "error") {
-                setIsLoading(false);
-                setMessages((prev) => [
-                  ...prev,
-                  {
-                    id: Date.now(),
-                    role: "assistant",
-                    content: `错误: ${event.content}`,
-                    tool_calls: null,
-                    created_at: new Date().toISOString(),
-                  },
-                ]);
-                break outerLoop;
               }
-            } catch (e) {
-              console.error("[SSE] parse error:", e);
+            } else if (event.type === "content") {
+              setIsLoading(false);
+              localContent = event.content;
+              // 立即更新 UI
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.role === "assistant") {
+                  return [...prev.slice(0, -1), {
+                    ...last,
+                    content: localContent,
+                    tool_calls: localToolCalls.length > 0 ? localToolCalls : null
+                  }];
+                }
+                return [...prev, {
+                  id: Date.now(),
+                  role: "assistant",
+                  content: localContent,
+                  tool_calls: localToolCalls.length > 0 ? localToolCalls : null,
+                  created_at: new Date().toISOString(),
+                }];
+              });
+            } else if (event.type === "error") {
+              setIsLoading(false);
+              setMessages((prev) => [...prev, {
+                id: Date.now(),
+                role: "assistant",
+                content: `错误: ${event.content}`,
+                tool_calls: null,
+                created_at: new Date().toISOString(),
+              }]);
             }
+          } catch (e) {
+            console.error("[SSE] parse error:", e);
           }
         }
       }
     }
 
-    console.log("[SSE] finished, assistantContent:", assistantContent.substring(0, 100));
     setIsLoading(false);
+    isStreamingRef.current = false;
   };
 
   // 删除会话
@@ -291,9 +301,9 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-[calc(100vh-64px)] flex flex-col">
       {/* 顶部策略选择器 */}
-      <header className="bg-white border-b px-4 py-3">
+      <header className="glass-card mx-0 rounded-none border-x-0 border-t-0 px-4 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <StrategySelector
             strategies={strategies}
@@ -315,11 +325,11 @@ export default function ChatPage() {
       {/* 主体区域 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧会话列表 */}
-        <aside className="w-64 bg-white border-r flex flex-col">
-          <div className="p-3 border-b">
+        <aside className="w-64 glass-card rounded-none border-t-0 border-b-0 border-l-0 flex flex-col">
+          <div className="p-3 border-b border-white/10">
             <button
               onClick={createSession}
-              className="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center justify-center gap-2"
+              className="btn-primary w-full flex items-center justify-center gap-2"
             >
               <span>+</span> 新对话
             </button>
@@ -333,7 +343,7 @@ export default function ChatPage() {
         </aside>
 
         {/* 右侧消息区域 */}
-        <main className="flex-1 flex flex-col">
+        <main className="flex-1 flex flex-col bg-[rgba(10,15,26,0.5)]">
           <MessageList
             messages={messages}
             isLoading={isLoading}

@@ -12,7 +12,7 @@ export default function PromptTemplates({ prompts = [], onSelect }: Props) {
         <button
           key={i}
           onClick={() => onSelect(p.content)}
-          className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-full flex items-center gap-1 transition-colors"
+          className="px-3 py-1.5 text-sm bg-white/5 hover:bg-white/10 border border-white/10 rounded-full flex items-center gap-1.5 transition-colors text-white/70 hover:text-white"
         >
           <span>{p.icon}</span>
           <span>{p.title}</span>

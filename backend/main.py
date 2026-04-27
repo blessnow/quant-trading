@@ -24,9 +24,13 @@ from api.articles import router as articles_router
 from api.phone_auth import router as phone_auth_router
 from api.web_auth import router as web_auth_router
 from api.chat import router as chat_router
+from api.scheduler import router as scheduler_router
+from api.health import router as health_router
+from api.notifications import router as notifications_router
 
 # WebSocket连接管理
 ws_connections: list[WebSocket] = []
+ws_log_connections: list[WebSocket] = []
 
 
 @asynccontextmanager
@@ -53,8 +57,10 @@ async def lifespan(app: FastAPI):
 
     # 关闭
     from scheduler import scheduler
+    from database import close_db
     if scheduler.running:
         scheduler.shutdown()
+    await close_db()
     logger.info("[关闭] 系统已停止")
 
 
@@ -73,11 +79,20 @@ class TimeoutMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(TimeoutMiddleware)
 
+import config
+
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+]
+if config.FRONTEND_URL and config.FRONTEND_URL not in ALLOWED_ORIGINS:
+    ALLOWED_ORIGINS.append(config.FRONTEND_URL)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000", "*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -92,6 +107,9 @@ app.include_router(articles_router)
 app.include_router(phone_auth_router)
 app.include_router(web_auth_router)
 app.include_router(chat_router)
+app.include_router(scheduler_router)
+app.include_router(health_router)
+app.include_router(notifications_router)
 
 
 @app.get("/")
@@ -111,11 +129,24 @@ async def ws_dashboard(ws: WebSocket):
     try:
         while True:
             data = await ws.receive_text()
-            # 心跳
             if data == "ping":
                 await ws.send_text("pong")
     except WebSocketDisconnect:
         ws_connections.remove(ws)
+
+
+@app.websocket("/ws/logs")
+async def ws_logs(ws: WebSocket):
+    """实时推送策略日志"""
+    await ws.accept()
+    ws_log_connections.append(ws)
+    try:
+        while True:
+            data = await ws.receive_text()
+            if data == "ping":
+                await ws.send_text("pong")
+    except WebSocketDisconnect:
+        ws_log_connections.remove(ws)
 
 
 async def broadcast(data: dict):
@@ -127,6 +158,17 @@ async def broadcast(data: dict):
             await ws.send_text(msg)
         except Exception:
             ws_connections.remove(ws)
+
+
+async def broadcast_log(log_data: dict):
+    """广播日志到所有日志WebSocket连接"""
+    import json
+    msg = json.dumps(log_data, ensure_ascii=False)
+    for ws in ws_log_connections[:]:
+        try:
+            await ws.send_text(msg)
+        except Exception:
+            ws_log_connections.remove(ws)
 
 
 async def _register_strategies_to_db():

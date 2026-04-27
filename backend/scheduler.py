@@ -144,15 +144,42 @@ async def run_strategy(strategy_name: str):
 
 async def _write_log(db, strategy_id: int, strategy_name: str,
                      level: str, message: str, detail: str = ""):
-    """写入策略执行日志"""
+    """写入策略执行日志并广播"""
     try:
         await db.execute(
             "INSERT INTO strategy_logs (strategy_id, strategy_name, level, message, detail) VALUES (?, ?, ?, ?, ?)",
             (strategy_id, strategy_name, level, message, detail),
         )
         await db.commit()
+        
+        # 广播日志到WebSocket
+        from main import broadcast_log
+        await broadcast_log({
+            "strategy_id": strategy_id,
+            "strategy_name": strategy_name,
+            "level": level,
+            "message": message,
+            "detail": detail[:200] if detail else "",
+            "time": datetime.now().strftime("%H:%M:%S"),
+        })
     except Exception:
         pass
+
+
+async def cleanup_old_logs():
+    """清理7天前的策略日志"""
+    db = await get_db()
+    try:
+        result = await db.execute(
+            "DELETE FROM strategy_logs WHERE created_at < datetime('now', '-7 days')"
+        )
+        await db.commit()
+        deleted = result.rowcount
+        logger.info(f"[日志清理] 已清理 {deleted} 条7天前的策略日志")
+    except Exception as e:
+        logger.error(f"[日志清理] 失败: {e}")
+    finally:
+        await db.close()
 
 
 async def snapshot_equity():
@@ -389,6 +416,48 @@ async def update_positions_realtime(market: str):
         await db.close()
 
 
+async def _check_position_for_sell(
+    strategy_id: int,
+    symbol: str,
+    market: str,
+    name: str,
+    shares: float,
+    avg_cost: float,
+    cur_price: float,
+    sellable: bool = True
+):
+    """检查单个持仓是否需要卖出"""
+    if avg_cost <= 0 or cur_price <= 0:
+        return None
+
+    pnl_pct = (cur_price - avg_cost) / avg_cost * 100
+
+    should_sell = False
+    reason = ""
+
+    if pnl_pct <= -8:
+        should_sell = True
+        reason = f"止损 {pnl_pct:.1f}%"
+    elif pnl_pct >= 15 and sellable:
+        should_sell = True
+        reason = f"止盈 {pnl_pct:.1f}%"
+
+    if should_sell and sellable:
+        logger.info(f"[持仓监控] {symbol} {reason}，触发卖出")
+        signal = Signal(
+            signal_type=SignalType.SELL,
+            symbol=symbol,
+            market=Market.A_SHARE if market == "A_SHARE" else Market.US_STOCK,
+            name=name,
+            price=cur_price,
+            shares=shares,
+            metadata={"reason": reason}
+        )
+        signal.strategy_id = strategy_id
+        return await broker.execute(signal)
+    return None
+
+
 async def monitor_positions():
     """持仓监控：止损/止盈检查，盘中实时调仓"""
     db = await get_db()
@@ -404,32 +473,12 @@ async def monitor_positions():
 
         for r in a_rows:
             pos_id, strategy_id, symbol, market, name, shares, avg_cost, cur_price, sellable_date = r
-            if avg_cost <= 0 or cur_price <= 0:
-                continue
-            pnl_pct = (cur_price - avg_cost) / avg_cost * 100
             sellable = (sellable_date or "") <= today_a
-
-            # 止损 -8% 或 止盈 +15%
-            should_sell = False
-            reason = ""
-            if pnl_pct <= -8:
-                should_sell = True
-                reason = f"止损 {pnl_pct:.1f}%"
-            elif pnl_pct >= 15 and sellable:
-                should_sell = True
-                reason = f"止盈 {pnl_pct:.1f}%"
-
-            if should_sell and sellable:
-                logger.info(f"[持仓监控] {symbol} {reason}，触发卖出")
-                signal = Signal(
-                    signal_type=SignalType.SELL, symbol=symbol, market=Market.A_SHARE,
-                    name=name, price=cur_price, shares=shares,
-                    metadata={"reason": reason}
-                )
-                signal.strategy_id = strategy_id
-                trade = await broker.execute(signal)
-                if trade:
-                    logger.info(f"[持仓监控] {symbol} 卖出成交: {reason}")
+            trade = await _check_position_for_sell(
+                strategy_id, symbol, market, name, shares, avg_cost, cur_price, sellable
+            )
+            if trade:
+                logger.info(f"[持仓监控] {symbol} 卖出成交")
 
         # 美股：T+0 随时可卖
         async with db.execute(
@@ -441,33 +490,77 @@ async def monitor_positions():
 
         for r in us_rows:
             pos_id, strategy_id, symbol, market, name, shares, avg_cost, cur_price = r
-            if avg_cost <= 0 or cur_price <= 0:
-                continue
-            pnl_pct = (cur_price - avg_cost) / avg_cost * 100
-
-            should_sell = False
-            reason = ""
-            if pnl_pct <= -8:
-                should_sell = True
-                reason = f"止损 {pnl_pct:.1f}%"
-            elif pnl_pct >= 15:
-                should_sell = True
-                reason = f"止盈 {pnl_pct:.1f}%"
-
-            if should_sell:
-                logger.info(f"[持仓监控] {symbol} {reason}，触发卖出")
-                signal = Signal(
-                    signal_type=SignalType.SELL, symbol=symbol, market=Market.US_STOCK,
-                    name=name, price=cur_price, shares=shares,
-                    metadata={"reason": reason}
-                )
-                signal.strategy_id = strategy_id
-                trade = await broker.execute(signal)
-                if trade:
-                    logger.info(f"[持仓监控] {symbol} 卖出成交: {reason}")
+            trade = await _check_position_for_sell(
+                strategy_id, symbol, market, name, shares, avg_cost, cur_price, sellable=True
+            )
+            if trade:
+                logger.info(f"[持仓监控] {symbol} 卖出成交")
 
     except Exception as e:
         logger.error(f"[持仓监控异常] {e}")
+    finally:
+        await db.close()
+
+
+async def check_alerts():
+    """检查告警条件并发送通知"""
+    db = await get_db()
+    try:
+        alerts = []
+        
+        # 1. 检查策略异常（最近1小时有错误日志）
+        async with db.execute(
+            """SELECT DISTINCT strategy_name, COUNT(*) as cnt 
+               FROM strategy_logs 
+               WHERE level='error' AND created_at > datetime('now', '-1 hour')
+               GROUP BY strategy_id"""
+        ) as cur:
+            error_strategies = await cur.fetchall()
+        
+        for name, cnt in error_strategies:
+            alerts.append(f"⚠️ 策略 {name} 最近1小时有 {cnt} 次错误")
+        
+        # 2. 检查持仓风险（单只股票亏损超过10%）
+        async with db.execute(
+            """SELECT symbol, name, avg_cost, current_price, 
+                      (current_price - avg_cost) / avg_cost * 100 as pnl_pct
+               FROM positions 
+               WHERE current_price IS NOT NULL AND avg_cost > 0"""
+        ) as cur:
+            positions = await cur.fetchall()
+        
+        for symbol, name, avg_cost, cur_price, pnl_pct in positions:
+            if pnl_pct <= -10:
+                alerts.append(f"📉 {name}({symbol}) 亏损 {pnl_pct:.1f}%")
+        
+        # 3. 检查账户现金不足
+        async with db.execute(
+            "SELECT strategy_id, cash, initial_capital FROM accounts WHERE strategy_id IS NOT NULL"
+        ) as cur:
+            accounts = await cur.fetchall()
+        
+        for sid, cash, initial in accounts:
+            if cash < initial * 0.1:
+                alerts.append(f"💰 策略 {sid} 现金不足10%: {cash:.0f}")
+        
+        # 发送告警通知
+        if alerts:
+            from services.notifier import Notifier
+            message = "📊 量化交易告警\n\n" + "\n".join(alerts)
+            
+            # 发送给所有配置了通知的用户
+            async with db.execute(
+                "SELECT DISTINCT user_id FROM notification_config WHERE is_enabled=1"
+            ) as cur:
+                users = await cur.fetchall()
+            
+            for user_id, in users:
+                await Notifier.send_to_user(user_id, message)
+            
+            logger.warning(f"[告警] 发送 {len(alerts)} 条告警给 {len(users)} 个用户")
+    
+    except Exception as e:
+        logger.error(f"[告警检查异常] {e}")
     finally:
         await db.close()
 
@@ -574,6 +667,18 @@ def setup_jobs():
     scheduler.add_job(
         monitor_positions, "cron", minute="*/3", hour="9-15", timezone=ET, day_of_week="mon-fri",
         id="us_stock_monitor", replace_existing=True, misfire_grace_time=60,
+    )
+
+    # 日志清理（每天凌晨2点，保留7天）
+    scheduler.add_job(
+        cleanup_old_logs, "cron", hour=2, minute=0, timezone=CST,
+        id="cleanup_logs", replace_existing=True, misfire_grace_time=300,
+    )
+
+    # 告警检查（每30分钟）
+    scheduler.add_job(
+        check_alerts, "cron", minute="*/30", timezone=CST,
+        id="check_alerts", replace_existing=True, misfire_grace_time=300,
     )
 
     logger.info(f"[调度器] 共注册 {len(scheduler.get_jobs())} 个任务")

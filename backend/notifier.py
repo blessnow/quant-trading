@@ -1,4 +1,4 @@
-"""告警通知服务"""
+"""告警通知服务 - 基于用户配置的通知发送"""
 import json
 from typing import Optional
 
@@ -6,23 +6,19 @@ import httpx
 from loguru import logger
 
 import config
+from services.notifier import Notifier as BaseNotifier
 
 
 async def send_telegram(message: str):
+    """使用全局配置发送Telegram消息（兼容旧代码）"""
     if not config.TELEGRAM_BOT_TOKEN or not config.TELEGRAM_CHAT_ID:
         logger.debug("[通知] Telegram未配置，跳过")
         return
-    try:
-        url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
-        async with httpx.AsyncClient() as client:
-            await client.post(url, json={
-                "chat_id": config.TELEGRAM_CHAT_ID,
-                "text": message,
-                "parse_mode": "HTML",
-            })
-        logger.info(f"[通知] Telegram发送成功")
-    except Exception as e:
-        logger.error(f"[通知] Telegram发送失败: {e}")
+    await BaseNotifier.send_telegram(
+        config.TELEGRAM_BOT_TOKEN,
+        config.TELEGRAM_CHAT_ID,
+        message
+    )
 
 
 async def notify(event_type: str, message: str):
@@ -68,3 +64,10 @@ async def notify_daily_report(summary: dict):
         f"今日交易: {summary['trades_today']}笔"
     )
     await notify("日报", msg)
+
+
+# 重导出 BaseNotifier 供需要用户级通知的代码使用
+__all__ = [
+    "send_telegram", "notify", "notify_trade", "notify_risk",
+    "notify_daily_report", "BaseNotifier"
+]

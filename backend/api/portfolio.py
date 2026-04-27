@@ -1,4 +1,5 @@
 """组合/持仓/净值 API"""
+from collections import defaultdict
 from fastapi import APIRouter
 
 from database import get_db
@@ -84,27 +85,41 @@ async def get_best_strategy(days: int = 90):
                     "unrealized_pnl": r[3], "daily_return_pct": r[4],
                 })
 
-        # 基准曲线
+        # 基准曲线 - 批量查询优化
         market = strategy_info.get("market", "A_SHARE")
         benchmarks = []
+
         async with db.execute(
             """SELECT DISTINCT symbol, name FROM benchmark_snapshots WHERE market=?""",
             (market,)
         ) as cur:
             bm_rows = await cur.fetchall()
-        for bm in bm_rows:
-            bm_curve = []
+
+        if bm_rows:
+            symbols = [bm[0] for bm in bm_rows]
+            placeholders = ",".join("?" * len(symbols))
             async with db.execute(
-                """SELECT snapshot_date, return_pct, close_price
-                   FROM benchmark_snapshots WHERE symbol=?
-                   AND snapshot_date >= date('now', ?||' days')
-                   ORDER BY snapshot_date""",
-                (bm[0], str(-days))
+                f"""SELECT symbol, snapshot_date, return_pct, close_price
+                   FROM benchmark_snapshots
+                   WHERE symbol IN ({placeholders}) AND snapshot_date >= date('now', ?||' days')
+                   ORDER BY symbol, snapshot_date""",
+                [*symbols, str(-days)]
             ) as cur:
-                bm_data = await cur.fetchall()
-            for b in bm_data:
-                bm_curve.append({"date": b[0], "return_pct": b[1], "close": b[2]})
-            benchmarks.append({"name": bm[1], "symbol": bm[0], "curve": bm_curve})
+                all_bm_data = await cur.fetchall()
+
+            # 按symbol分组
+            bm_data_by_symbol = defaultdict(list)
+            for row in all_bm_data:
+                bm_data_by_symbol[row[0]].append({
+                    "date": row[1], "return_pct": row[2], "close": row[3]
+                })
+
+            for bm in bm_rows:
+                benchmarks.append({
+                    "name": bm[1],
+                    "symbol": bm[0],
+                    "curve": bm_data_by_symbol.get(bm[0], [])
+                })
 
         return {"strategy": strategy_info, "curve": curve, "benchmarks": benchmarks}
     finally:
@@ -116,12 +131,6 @@ async def get_benchmarks(market: str = None, days: int = 90):
     """获取基准指数收益率曲线"""
     db = await get_db()
     try:
-        conditions = ["snapshot_date >= date('now', ?||' days')"]
-        params = [str(-days)]
-        if market:
-            conditions.append("market=?")
-            params.append(market)
-
         # 获取所有基准symbol
         async with db.execute(
             "SELECT DISTINCT symbol, name, market FROM benchmark_snapshots"
@@ -131,18 +140,32 @@ async def get_benchmarks(market: str = None, days: int = 90):
             bm_list = await cur.fetchall()
 
         benchmarks = []
-        for bm in bm_list:
-            bm_curve = []
+        if bm_list:
+            symbols = [bm[0] for bm in bm_list]
+            placeholders = ",".join("?" * len(symbols))
             async with db.execute(
-                """SELECT snapshot_date, return_pct, close_price
-                   FROM benchmark_snapshots WHERE symbol=? AND snapshot_date >= date('now', ?||' days')
-                   ORDER BY snapshot_date""",
-                (bm[0], str(-days))
+                f"""SELECT symbol, snapshot_date, return_pct, close_price
+                   FROM benchmark_snapshots
+                   WHERE symbol IN ({placeholders}) AND snapshot_date >= date('now', ?||' days')
+                   ORDER BY symbol, snapshot_date""",
+                [*symbols, str(-days)]
             ) as cur:
-                rows = await cur.fetchall()
-            for r in rows:
-                bm_curve.append({"date": r[0], "return_pct": r[1], "close": r[2]})
-            benchmarks.append({"name": bm[1], "symbol": bm[0], "market": bm[2], "curve": bm_curve})
+                all_rows = await cur.fetchall()
+
+            # 按symbol分组
+            bm_data_by_symbol = defaultdict(list)
+            for r in all_rows:
+                bm_data_by_symbol[r[0]].append({
+                    "date": r[1], "return_pct": r[2], "close": r[3]
+                })
+
+            for bm in bm_list:
+                benchmarks.append({
+                    "name": bm[1],
+                    "symbol": bm[0],
+                    "market": bm[2],
+                    "curve": bm_data_by_symbol.get(bm[0], [])
+                })
 
         return {"benchmarks": benchmarks}
     finally:
@@ -158,9 +181,8 @@ async def get_summary():
         total_initial = 0
 
         for market in ["A_SHARE", "US_STOCK"]:
-            # 汇总该市场级账户（strategy_id=NULL 为市场汇总账户）
             async with db.execute(
-                "SELECT COALESCE(SUM(cash), 0), COALESCE(SUM(initial_capital), 0) FROM accounts WHERE strategy_id IS NULL AND market=?",
+                "SELECT COALESCE(SUM(cash), 0), COALESCE(SUM(initial_capital), 0) FROM accounts WHERE market=?",
                 (market,)
             ) as cur:
                 acct = await cur.fetchone()
@@ -277,7 +299,7 @@ async def get_equity_curve(days: int = 90, market: str = None, strategy_id: int 
                 })
             return {"curve": curve, "count": len(curve), "level": "strategy"}
 
-        # 市场级曲线（原有逻辑）
+        # 市场级曲线
         query = """
             SELECT market, total_value, cash, unrealized_pnl, daily_return_pct,
                    snapshot_date, snapshot_time

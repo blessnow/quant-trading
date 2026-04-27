@@ -6,10 +6,12 @@ import { UserNav } from "@/app/components/UserNav";
 export const metadata = { title: "QuantTrader", description: "A股+美股高频量化交易系统" };
 
 const navItems = [
-  { href: "/", label: "看板", icon: "■" },
+  { href: "/", label: "看板", icon: "📊" },
   { href: "/strategies", label: "策略", icon: "⚡" },
-  { href: "/trades", label: "交易", icon: "☰" },
+  { href: "/trades", label: "交易", icon: "📈" },
   { href: "/chat", label: "问财", icon: "💬" },
+  { href: "/monitor", label: "监控", icon: "📡" },
+  { href: "/settings/notifications", label: "设置", icon: "⚙️" },
 ];
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -17,28 +19,40 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="zh">
       <body>
         <AuthProvider>
-          <nav className="bg-[#1a1a2e] text-white sticky top-0 z-50 shadow-lg">
-            <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+          {/* 导航栏 */}
+          <nav className="sticky top-0 z-50 backdrop-blur-xl bg-[rgba(10,15,26,0.8)] border-b border-white/10">
+            <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
               <div className="flex items-center gap-8">
-                <span className="font-bold text-lg tracking-tight">QuantTrader</span>
+                {/* Logo */}
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">Q</span>
+                  </div>
+                  <span className="font-bold text-lg text-white tracking-tight">QuantTrader</span>
+                </div>
+                {/* 导航链接 */}
                 <div className="flex gap-1">
                   {navItems.map((item) => (
                     <Link
                       key={item.href}
                       href={item.href}
-                      className="px-3 py-1.5 rounded-lg text-sm text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                      className="nav-link"
                     >
                       {item.label}
                     </Link>
                   ))}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <UserNav />
-                <span className="text-xs text-white/40">模拟盘</span>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10">
+                  <div className="status-dot active" />
+                  <span className="text-xs text-white/60">模拟盘运行</span>
+                </div>
               </div>
             </div>
           </nav>
+          {/* 主内容区 */}
           <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
         </AuthProvider>
       </body>

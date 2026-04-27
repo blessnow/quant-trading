@@ -22,18 +22,18 @@ export default function ToolCallDisplay({ toolCall }: Props) {
   const displayName = TOOL_NAMES[toolCall.name] || toolCall.name;
 
   return (
-    <div className="bg-gray-50 border rounded-lg p-3 text-sm">
-      <div className="flex items-center gap-2 text-gray-600">
+    <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-sm">
+      <div className="flex items-center gap-2 text-white/70">
         <span className="text-lg">🔧</span>
         <span className="font-medium">{displayName}</span>
       </div>
 
       {/* 参数 */}
       {Object.keys(toolCall.args).length > 0 && (
-        <div className="mt-2 text-xs text-gray-500">
+        <div className="mt-2 text-xs text-white/50">
           {Object.entries(toolCall.args).map(([k, v]) => (
             <span key={k} className="mr-3">
-              {k}: <code className="bg-gray-200 px-1 rounded">{String(v)}</code>
+              {k}: <code className="bg-white/10 px-1.5 py-0.5 rounded text-white/70">{String(v)}</code>
             </span>
           ))}
         </div>
@@ -42,10 +42,10 @@ export default function ToolCallDisplay({ toolCall }: Props) {
       {/* 结果 */}
       {toolCall.result && (
         <details className="mt-2">
-          <summary className="cursor-pointer text-xs text-gray-400 hover:text-gray-600">
+          <summary className="cursor-pointer text-xs text-white/40 hover:text-white/60 transition-colors">
             查看结果
           </summary>
-          <pre className="mt-2 text-xs bg-white border rounded p-2 overflow-x-auto max-h-40">
+          <pre className="mt-2 text-xs bg-white/5 border border-white/10 rounded p-2 overflow-x-auto max-h-40 text-white/70">
             {toolCall.result.slice(0, 500)}
             {toolCall.result.length > 500 && "..."}
           </pre>

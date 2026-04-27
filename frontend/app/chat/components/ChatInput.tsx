@@ -25,21 +25,21 @@ export default function ChatInput({ onSend, disabled }: Props) {
   };
 
   return (
-    <div className="border-t bg-white p-4">
+    <div className="border-t border-white/10 bg-[rgba(10,15,26,0.8)] p-4">
       <div className="max-w-4xl mx-auto flex gap-3">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="输入问题，按 Enter 发送..."
-          className="flex-1 border rounded-xl px-4 py-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="dark-input flex-1 rounded-xl px-4 py-3 resize-none"
           rows={1}
           disabled={disabled}
         />
         <button
           onClick={handleSend}
           disabled={disabled || !input.trim()}
-          className="px-6 py-3 bg-blue-500 text-white rounded-xl hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          className="px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-500 disabled:bg-white/10 disabled:text-white/30 disabled:cursor-not-allowed transition-colors font-medium"
         >
           发送
         </button>

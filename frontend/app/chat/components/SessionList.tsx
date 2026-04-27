@@ -18,23 +18,23 @@ export default function SessionList({ sessions = [], current, onSelect, onDelete
   return (
     <div className="flex-1 overflow-y-auto">
       {!sessions || sessions.length === 0 ? (
-        <div className="p-4 text-center text-gray-400 text-sm">
+        <div className="p-4 text-center text-white/40 text-sm">
           暂无对话记录
         </div>
       ) : (
-        <ul className="divide-y">
+        <ul className="divide-y divide-white/5">
           {sessions.map((s) => (
             <li
               key={s.id}
-              className={`group p-3 cursor-pointer hover:bg-gray-50 ${
-                current?.id === s.id ? "bg-blue-50" : ""
+              className={`group p-3 cursor-pointer hover:bg-white/5 transition-colors ${
+                current?.id === s.id ? "bg-white/10" : ""
               }`}
               onClick={() => onSelect(s)}
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{s.title}</p>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-sm font-medium text-white truncate">{s.title}</p>
+                  <p className="text-xs text-white/40 mt-1">
                     {new Date(s.updated_at).toLocaleDateString()}
                   </p>
                 </div>
@@ -43,7 +43,7 @@ export default function SessionList({ sessions = [], current, onSelect, onDelete
                     e.stopPropagation();
                     onDelete(s.id);
                   }}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-100 rounded text-red-500"
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded text-red-400 transition-opacity"
                 >
                   ×
                 </button>

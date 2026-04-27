@@ -1,4 +1,5 @@
 """聊天 API — 智能投顾对话接口"""
+import asyncio
 import json
 from datetime import datetime, timedelta
 from typing import Optional
@@ -296,10 +297,6 @@ async def send_message(
         tool_calls = []
         last_heartbeat = datetime.now()
 
-        async def send_heartbeat():
-            """发送心跳保持连接"""
-            yield ": heartbeat\n\n"
-
         try:
             async for event in agent.chat_stream(messages, req.content, positions):
                 # 每5秒发送心跳
@@ -316,18 +313,22 @@ async def send_message(
                         "args": event["args"],
                     })
                     yield f"data: {json.dumps({'type': 'tool_call', 'name': event['name'], 'args': event['args']}, ensure_ascii=False)}\n\n"
+                    # 强制刷新缓冲区
+                    await asyncio.sleep(0)
 
                 elif event["type"] == "tool_result":
                     # 工具调用结果
                     if tool_calls:
                         tool_calls[-1]["result"] = event["result"]
                     yield f"data: {json.dumps({'type': 'tool_result', 'name': event['name'], 'result': event['result'][:500]}, ensure_ascii=False)}\n\n"
+                    await asyncio.sleep(0)
 
                 elif event["type"] == "content":
                     # 最终内容
                     full_content = event["content"]
                     logger.info(f"[SSE] 发送内容: {full_content[:100]}...")
                     yield f"data: {json.dumps({'type': 'content', 'content': event['content']}, ensure_ascii=False)}\n\n"
+                    await asyncio.sleep(0)
 
                 elif event["type"] == "error":
                     yield f"data: {json.dumps({'type': 'error', 'content': event['content']}, ensure_ascii=False)}\n\n"

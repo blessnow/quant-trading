@@ -2,6 +2,7 @@
 
 支持多策略切换、流式输出、工具调用可视化
 """
+import asyncio
 import json
 import os
 from dataclasses import dataclass, field
@@ -9,6 +10,7 @@ from datetime import datetime
 from typing import AsyncGenerator, Optional
 
 import anthropic
+import pandas as pd
 from loguru import logger
 
 from data.a_share_provider import (
@@ -23,6 +25,28 @@ from llm.yu_ge_prompts import SYSTEM_PROMPT as YU_GE_SYSTEM
 from llm.general_advisor_prompts import SYSTEM_PROMPT as GENERAL_SYSTEM
 
 MAX_TURNS = 15
+
+
+def _parallel_fetch(
+    items: list,
+    fetch_fn,
+    max_workers: int = 5,
+    timeout: int = 30,
+    limit: int = 10
+) -> dict:
+    """通用的并行获取工具"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(fetch_fn, item) for item in items[:limit]]
+        for future in futures:
+            try:
+                key, data = future.result(timeout=timeout)
+                results[key] = data
+            except Exception:
+                pass
+    return results
 
 
 @dataclass
@@ -174,6 +198,7 @@ class ChatAgent:
                     timeout=1200.0,
                 )
                 logger.info(f"[ChatAgent] LLM返回 {len(response.content)} 个块")
+                await asyncio.sleep(0)  # 让出控制权
             except Exception as e:
                 logger.error(f"[ChatAgent] LLM 调用失败: {e}")
                 yield {"type": "error", "content": str(e)}
@@ -183,10 +208,10 @@ class ChatAgent:
             tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
             if tool_use_blocks:
                 logger.info(f"[ChatAgent] 需要调用 {len(tool_use_blocks)} 个工具: {[b.name for b in tool_use_blocks]}")
-                
+
                 # 合并相同工具的多次调用为批量调用
                 merged_calls = self._merge_tool_calls(tool_use_blocks)
-                
+
                 for idx, (merged_name, merged_args, merged_blocks) in enumerate(merged_calls):
                     logger.info(f"[ChatAgent] 工具 {idx+1}/{len(merged_calls)}: {merged_name} ({len(merged_blocks)} 个标的)")
 
@@ -196,6 +221,7 @@ class ChatAgent:
                         "name": merged_name,
                         "args": merged_args,
                     }
+                    await asyncio.sleep(0)  # 让出控制权，确保事件发送
 
                     # 执行工具
                     try:
@@ -207,6 +233,7 @@ class ChatAgent:
                             "name": merged_name,
                             "result": result[:2000],
                         }
+                        await asyncio.sleep(0)  # 让出控制权
                     except Exception as e:
                         logger.error(f"[ChatAgent] 工具 {merged_name} 执行错误: {e}")
                         result = f"工具执行错误: {e}"
@@ -225,6 +252,7 @@ class ChatAgent:
                         })
                 
                 logger.info(f"[ChatAgent] 所有工具执行完成，进入下一轮")
+                await asyncio.sleep(0)
             else:
                 # 输出最终回复
                 # 处理不同类型的块：text, thinking 等
@@ -241,6 +269,7 @@ class ChatAgent:
                 if text:
                     logger.info(f"[ChatAgent] 生成回复: {text[:200]}...")
                     yield {"type": "content", "content": text}
+                    await asyncio.sleep(0)
                 else:
                     logger.warning("[ChatAgent] 无法生成回复")
                     yield {"type": "content", "content": "抱歉，我无法生成回复。"}
@@ -279,6 +308,8 @@ class ChatAgent:
         """执行工具"""
         if name == "search_web":
             return self._tool_search_web(args.get("query", ""), DDGS)
+        elif name == "batch_search_web":
+            return self._tool_batch_search_web(args.get("queries", []), DDGS)
         elif name == "get_market_data":
             return self._tool_get_market_data()
         elif name == "get_stock_info":
@@ -298,30 +329,60 @@ class ChatAgent:
         return f"未知工具: {name}"
 
     def _tool_search_web(self, query: str, DDGS) -> str:
-        import signal
-        
-        def timeout_handler(signum, frame):
-            raise TimeoutError("搜索超时")
-        
+        """搜索网络获取新闻资讯，优先使用 akshare 新闻接口"""
+        import akshare as ak
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+        # 提取关键词用于新闻搜索
+        keywords = query.replace("A股", "").replace("2026", "").replace("2025", "")
+        keywords = keywords.replace("年", "").replace("月", "").replace("日", "")
+        keywords = [k.strip() for k in keywords.split() if len(k.strip()) >= 2][:3]
+
+        def search_news():
+            results = []
+            # 尝试多个关键词搜索
+            for keyword in ["股市", "涨停", "A股"]:
+                try:
+                    news = ak.stock_news_em(symbol=keyword)
+                    if not news.empty:
+                        for _, row in news.head(5).iterrows():
+                            results.append({
+                                "title": row.get("新闻标题", ""),
+                                "body": row.get("新闻内容", "")[:200],
+                                "source": row.get("文章来源", ""),
+                                "time": row.get("发布时间", ""),
+                            })
+                        break
+                except Exception:
+                    continue
+            return results
+
         try:
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(30)
-            
-            with DDGS() as ddgs:
-                results = list(ddgs.text(query, max_results=5))
-            
-            signal.alarm(0)
-            
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(search_news)
+                results = future.result(timeout=15)
+
             if not results:
-                return f"搜索 '{query}' 无结果"
+                return f"搜索 '{query}' 无结果，请稍后重试"
             lines = []
-            for r in results:
-                lines.append(f"- {r.get('title', '')}\n  {r.get('body', '')[:200]}\n  来源: {r.get('href', '')}")
+            for r in results[:8]:
+                lines.append(f"- {r['title']}\n  {r['body']}\n  来源: {r['source']} {r['time']}")
             return "\n\n".join(lines)
-        except TimeoutError:
+        except FuturesTimeoutError:
             return f"搜索 '{query}' 超时，请稍后重试"
         except Exception as e:
             return f"搜索失败: {e}"
+
+    def _tool_batch_search_web(self, queries: list, DDGS) -> str:
+        """并行执行多个搜索查询"""
+        def search_one(query):
+            try:
+                return query, self._tool_search_web(query, DDGS)
+            except Exception as e:
+                return query, f"搜索失败: {e}"
+
+        results = _parallel_fetch(queries, search_one, max_workers=3, timeout=35, limit=5)
+        return json.dumps(results, ensure_ascii=False)
 
     def _tool_get_market_data(self) -> str:
         zt_pool = get_zt_pool()
@@ -400,8 +461,6 @@ class ChatAgent:
 
     def _tool_get_batch_fundamentals(self, codes: list) -> str:
         """并行获取多只股票的基本面数据"""
-        from concurrent.futures import ThreadPoolExecutor
-        
         def fetch_one(code):
             try:
                 data = get_stock_fundamentals(str(code).strip())
@@ -410,17 +469,8 @@ class ChatAgent:
                 return code, data
             except Exception as e:
                 return code, {"error": str(e)}
-        
-        results = {}
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(fetch_one, code) for code in codes[:10]]
-            for future in futures:
-                try:
-                    code, data = future.result()
-                    results[code] = data
-                except Exception:
-                    pass
-        
+
+        results = _parallel_fetch(codes, fetch_one, max_workers=5, limit=10)
         return json.dumps(results, ensure_ascii=False, default=str)[:8000]
 
     def _tool_get_pb_ratio(self, code: str) -> str:
@@ -430,24 +480,13 @@ class ChatAgent:
 
     def _tool_get_batch_pb_ratio(self, codes: list) -> str:
         """并行获取多只股票的估值数据"""
-        from concurrent.futures import ThreadPoolExecutor
-        
         def fetch_one(code):
             try:
                 return code, get_pb_ratio(str(code).strip())
             except Exception as e:
                 return code, {"error": str(e)}
-        
-        results = {}
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(fetch_one, code) for code in codes[:10]]
-            for future in futures:
-                try:
-                    code, data = future.result()
-                    results[code] = data
-                except Exception:
-                    pass
-        
+
+        results = _parallel_fetch(codes, fetch_one, max_workers=5, limit=10)
         return json.dumps(results, ensure_ascii=False, default=str)[:4000]
 
     def _tool_get_commodity_prices(self) -> str:

@@ -269,14 +269,32 @@ TOOL_DEFINITIONS = [
 # ─── 工具实现 ───────────────────────────────────────
 
 def _tool_search_web(query: str) -> str:
+    """搜索网络获取新闻资讯，使用 akshare 新闻接口"""
+    import akshare as ak
+
     try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=8))
+        # 尝试多个关键词搜索
+        results = []
+        for keyword in ["股市", "涨停", "A股"]:
+            try:
+                news = ak.stock_news_em(symbol=keyword)
+                if not news.empty:
+                    for _, row in news.head(8).iterrows():
+                        results.append({
+                            "title": row.get("新闻标题", ""),
+                            "body": row.get("新闻内容", "")[:200],
+                            "source": row.get("文章来源", ""),
+                            "time": row.get("发布时间", ""),
+                        })
+                    break
+            except Exception:
+                continue
+
         if not results:
             return f"搜索 '{query}' 无结果"
         lines = []
         for r in results:
-            lines.append(f"- {r.get('title', '')}\n  {r.get('body', '')[:200]}\n  来源: {r.get('href', '')}")
+            lines.append(f"- {r['title']}\n  {r['body']}\n  来源: {r['source']} {r['time']}")
         return "\n\n".join(lines)
     except Exception as e:
         return f"搜索失败: {e}"

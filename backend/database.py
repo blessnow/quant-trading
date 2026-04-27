@@ -2,6 +2,10 @@
 import aiosqlite
 from config import DB_PATH, DATA_DIR, INITIAL_CAPITAL_A_SHARE, INITIAL_CAPITAL_US_STOCK, INITIAL_CAPITAL_PER_STRATEGY
 import os
+import logging
+
+# 全局数据库连接（单例模式）
+_db_connection: aiosqlite.Connection | None = None
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS accounts (
@@ -109,10 +113,13 @@ CREATE TABLE IF NOT EXISTS strategy_param_history (
 
 CREATE TABLE IF NOT EXISTS notification_config (
     id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL DEFAULT 1,
     channel     TEXT NOT NULL,
     is_enabled  INTEGER NOT NULL DEFAULT 1,
     config_json TEXT NOT NULL DEFAULT '{}',
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, channel),
+    FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -210,8 +217,8 @@ CREATE TABLE IF NOT EXISTS articles (
     title       TEXT NOT NULL,
     summary     TEXT NOT NULL DEFAULT '',
     content     TEXT NOT NULL DEFAULT '',
-    category    TEXT NOT NULL DEFAULT 'market',  -- market/strategy/opinion/tutorial
-    tag         TEXT NOT NULL DEFAULT '',         -- 逗号分隔标签
+    category    TEXT NOT NULL DEFAULT 'market',
+    tag         TEXT NOT NULL DEFAULT '',
     is_published INTEGER NOT NULL DEFAULT 1,
     view_count  INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
@@ -241,6 +248,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 
 async def get_db() -> aiosqlite.Connection:
+    """获取数据库连接"""
     db = await aiosqlite.connect(DB_PATH)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA journal_mode=WAL")
@@ -248,70 +256,79 @@ async def get_db() -> aiosqlite.Connection:
     return db
 
 
+async def close_db():
+    """关闭数据库连接（单例模式下使用）"""
+    pass  # 每次请求独立连接，无需全局关闭
+
+
 async def init_db():
+    """初始化数据库"""
     os.makedirs(DATA_DIR, exist_ok=True)
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.executescript(SCHEMA_SQL)
 
-        # 迁移：检查旧 accounts 表是否没有 strategy_id 列
-        try:
-            async with db.execute("SELECT strategy_id FROM accounts LIMIT 1") as cur:
-                await cur.fetchone()
-        except aiosqlite.OperationalError:
-            # 旧表，需要迁移
-            await db.execute("ALTER TABLE accounts RENAME TO accounts_old")
-            await db.execute("""
-                CREATE TABLE accounts (
-                    id          INTEGER PRIMARY KEY,
-                    strategy_id INTEGER,
-                    market      TEXT NOT NULL,
-                    initial_capital REAL NOT NULL DEFAULT 0,
-                    cash        REAL NOT NULL DEFAULT 0,
-                    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                    UNIQUE(strategy_id, market),
-                    FOREIGN KEY (strategy_id) REFERENCES strategies(id)
-                )
-            """)
-            # 旧市场级账户作为 strategy_id=NULL 的汇总账户保留
-            await db.execute("""
-                INSERT INTO accounts (strategy_id, market, initial_capital, cash, updated_at)
-                SELECT NULL, market, initial_capital, cash, updated_at FROM accounts_old
-            """)
-            await db.execute("DROP TABLE accounts_old")
-            import logging
-            logging.info("[数据库] accounts 表迁移完成：新增 strategy_id 列")
+    db = await aiosqlite.connect(DB_PATH)
+    db.row_factory = aiosqlite.Row
+    await db.execute("PRAGMA journal_mode=WAL")
+    await db.execute("PRAGMA foreign_keys=ON")
 
-        # 初始化市场级汇总账户（strategy_id=NULL）
-        await db.execute(
-            "INSERT OR IGNORE INTO accounts (strategy_id, market, initial_capital, cash) VALUES (?, ?, ?, ?)",
-            (None, "A_SHARE", INITIAL_CAPITAL_A_SHARE, INITIAL_CAPITAL_A_SHARE)
-        )
-        await db.execute(
-            "INSERT OR IGNORE INTO accounts (strategy_id, market, initial_capital, cash) VALUES (?, ?, ?, ?)",
-            (None, "US_STOCK", INITIAL_CAPITAL_US_STOCK, INITIAL_CAPITAL_US_STOCK)
-        )
+    await db.executescript(SCHEMA_SQL)
 
-        # 为每个已注册策略创建独立账户
-        async with db.execute("SELECT id, market FROM strategies") as cur:
-            strategies = await cur.fetchall()
-        for sid, market in strategies:
-            await db.execute(
-                "INSERT OR IGNORE INTO accounts (strategy_id, market, initial_capital, cash) VALUES (?, ?, ?, ?)",
-                (sid, market, INITIAL_CAPITAL_PER_STRATEGY, INITIAL_CAPITAL_PER_STRATEGY)
+    # 迁移：检查旧 accounts 表是否没有 strategy_id 列
+    try:
+        async with db.execute("SELECT strategy_id FROM accounts LIMIT 1") as cur:
+            await cur.fetchone()
+    except aiosqlite.OperationalError:
+        await db.execute("ALTER TABLE accounts RENAME TO accounts_old")
+        await db.execute("""
+            CREATE TABLE accounts (
+                id          INTEGER PRIMARY KEY,
+                strategy_id INTEGER,
+                market      TEXT NOT NULL,
+                initial_capital REAL NOT NULL DEFAULT 0,
+                cash        REAL NOT NULL DEFAULT 0,
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(strategy_id, market),
+                FOREIGN KEY (strategy_id) REFERENCES strategies(id)
             )
+        """)
+        await db.execute("""
+            INSERT INTO accounts (strategy_id, market, initial_capital, cash, updated_at)
+            SELECT NULL, market, initial_capital, cash, updated_at FROM accounts_old
+        """)
+        await db.execute("DROP TABLE accounts_old")
+        logging.info("[数据库] accounts 表迁移完成：新增 strategy_id 列")
 
+    # 为每个已注册策略创建独立账户
+    async with db.execute("SELECT id, market FROM strategies") as cur:
+        strategies = await cur.fetchall()
+    for sid, market in strategies:
+        await db.execute(
+            "INSERT OR IGNORE INTO accounts (strategy_id, market, initial_capital, cash) VALUES (?, ?, ?, ?)",
+            (sid, market, INITIAL_CAPITAL_PER_STRATEGY, INITIAL_CAPITAL_PER_STRATEGY)
+        )
+
+    await db.commit()
+
+    # 迁移：users 表新增字段
+    try:
+        async with db.execute("SELECT password_hash FROM users LIMIT 1") as cur:
+            await cur.fetchone()
+    except aiosqlite.OperationalError:
+        await db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
+        await db.execute("ALTER TABLE users ADD COLUMN login_type TEXT NOT NULL DEFAULT 'wechat'")
+        await db.execute("ALTER TABLE users ADD COLUMN web_openid TEXT")
+        await db.execute("ALTER TABLE users ADD COLUMN unionid TEXT")
+        await db.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
         await db.commit()
+        logging.info("[数据库] users 表迁移完成：新增登录相关字段")
 
-        # 迁移：users 表新增字段
-        try:
-            async with db.execute("SELECT password_hash FROM users LIMIT 1") as cur:
-                await cur.fetchone()
-        except aiosqlite.OperationalError:
-            await db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
-            await db.execute("ALTER TABLE users ADD COLUMN login_type TEXT NOT NULL DEFAULT 'wechat'")
-            await db.execute("ALTER TABLE users ADD COLUMN web_openid TEXT")
-            await db.execute("ALTER TABLE users ADD COLUMN unionid TEXT")
-            await db.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
-            await db.commit()
-            import logging
-            logging.info("[数据库] users 表迁移完成：新增登录相关字段")
+    # 迁移：notification_config 表新增 user_id 字段
+    try:
+        async with db.execute("SELECT user_id FROM notification_config LIMIT 1") as cur:
+            await cur.fetchone()
+    except aiosqlite.OperationalError:
+        await db.execute("ALTER TABLE notification_config ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1")
+        await db.commit()
+        logging.info("[数据库] notification_config 表迁移完成：新增 user_id 列")
+
+    # 关闭初始化连接
+    await db.close()
