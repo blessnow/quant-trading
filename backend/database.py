@@ -340,5 +340,14 @@ async def init_db():
         await db.commit()
         logging.info("[数据库] users 表迁移完成：新增 is_admin 列")
 
+    # 迁移：users 表新增 last_login_at 字段
+    try:
+        async with db.execute("SELECT last_login_at FROM users LIMIT 1") as cur:
+            await cur.fetchone()
+    except aiosqlite.OperationalError:
+        await db.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
+        await db.commit()
+        logging.info("[数据库] users 表迁移完成：新增 last_login_at 列")
+
     # 关闭初始化连接
     await db.close()

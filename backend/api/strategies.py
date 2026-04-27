@@ -156,3 +156,114 @@ async def strategy_logs(strategy_id: int = None, limit: int = 100):
         return {"logs": logs, "count": len(logs)}
     finally:
         await db.close()
+
+
+@router.get("/{strategy_id}")
+async def get_strategy(strategy_id: int):
+    """获取单个策略详情"""
+    db = await get_db()
+    try:
+        async with db.execute("""
+            SELECT s.id, s.name, s.display_name, s.market, s.description,
+                   s.params_json, s.is_active, s.max_position_pct,
+                   sp.total_trades, sp.win_trades, sp.total_pnl, sp.win_rate, 
+                   sp.sharpe_ratio, sp.max_drawdown_pct
+            FROM strategies s LEFT JOIN strategy_performance sp ON s.id = sp.strategy_id
+            WHERE s.id=?
+        """, (strategy_id,)) as cur:
+            row = await cur.fetchone()
+
+        if not row:
+            return {"error": "策略不存在"}
+
+        return {
+            "id": row[0], "name": row[1], "display_name": row[2], "market": row[3],
+            "description": row[4], "params": json.loads(row[5]) if row[5] else {},
+            "is_active": bool(row[6]), "max_position_pct": row[7],
+            "performance": {
+                "total_trades": row[8] or 0, "win_trades": row[9] or 0,
+                "total_pnl": row[10] or 0, "win_rate": row[11] or 0,
+                "sharpe_ratio": row[12], "max_drawdown_pct": row[13] or 0,
+            } if row[8] else None,
+        }
+    finally:
+        await db.close()
+
+
+@router.get("/{strategy_id}/equity-curve")
+async def strategy_equity_curve(strategy_id: int, days: int = 90):
+    """策略收益曲线（每天只返回最新一条）"""
+    db = await get_db()
+    try:
+        async with db.execute("""
+            SELECT snapshot_date, total_value, invested, unrealized_pnl, daily_return_pct, MAX(snapshot_time)
+            FROM strategy_equity_snapshots
+            WHERE strategy_id=?
+            GROUP BY snapshot_date
+            ORDER BY snapshot_date DESC
+            LIMIT ?
+        """, (strategy_id, days)) as cur:
+            rows = await cur.fetchall()
+
+        curve = []
+        for r in reversed(rows):
+            curve.append({
+                "date": r[0], "total_value": r[1], "invested": r[2],
+                "unrealized_pnl": r[3], "daily_return_pct": r[4],
+            })
+        return {"curve": curve, "count": len(curve)}
+    finally:
+        await db.close()
+
+
+@router.get("/{strategy_id}/positions")
+async def strategy_positions(strategy_id: int):
+    """策略当前持仓"""
+    db = await get_db()
+    try:
+        async with db.execute("""
+            SELECT id, symbol, market, name, shares, avg_cost, current_price, buy_date, sellable_date
+            FROM positions WHERE strategy_id=?
+        """, (strategy_id,)) as cur:
+            rows = await cur.fetchall()
+
+        positions = []
+        for r in rows:
+            shares, avg_cost, current_price = r[4], r[5], r[6] or r[5]
+            unrealized_pnl = (current_price - avg_cost) * shares
+            unrealized_pnl_pct = (current_price - avg_cost) / avg_cost if avg_cost else 0
+            market_value = shares * current_price
+            positions.append({
+                "id": r[0], "symbol": r[1], "market": r[2], "name": r[3],
+                "shares": shares, "avg_cost": avg_cost, "current_price": current_price,
+                "unrealized_pnl": round(unrealized_pnl, 2), "unrealized_pnl_pct": round(unrealized_pnl_pct, 4),
+                "market_value": round(market_value, 2), "buy_date": r[7], "sellable_date": r[8],
+            })
+        return {"positions": positions, "count": len(positions)}
+    finally:
+        await db.close()
+
+
+@router.get("/{strategy_id}/trades")
+async def strategy_trades(strategy_id: int, limit: int = 100):
+    """策略历史交易"""
+    db = await get_db()
+    try:
+        async with db.execute("""
+            SELECT id, symbol, market, name, side, price, shares, notional,
+                   commission, pnl, executed_at
+            FROM trades WHERE strategy_id=?
+            ORDER BY id DESC LIMIT ?
+        """, (strategy_id, limit)) as cur:
+            rows = await cur.fetchall()
+
+        trades = []
+        for r in rows:
+            trades.append({
+                "id": r[0], "symbol": r[1], "market": r[2], "name": r[3],
+                "side": r[4], "price": r[5], "shares": r[6], "notional": r[7],
+                "commission": r[8], "pnl": r[9], "executed_at": r[10],
+            })
+        return {"trades": trades, "count": len(trades)}
+    finally:
+        await db.close()

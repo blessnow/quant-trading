@@ -15,7 +15,6 @@ python main.py              # starts on 0.0.0.0:8000
 ```bash
 npm install
 npm run dev                 # localhost:3000
-npm run build && npm run start
 ```
 
 No test, lint, or typecheck commands exist in this repo.
@@ -25,9 +24,9 @@ No test, lint, or typecheck commands exist in this repo.
 **Signal flow**: `Strategy.generate_signals()` → `RiskManager.pre_check/validate_signal` → `PaperBroker.execute` → SQLite
 
 **Backend startup sequence** (in `main.py:lifespan`):
-1. `init_db()` — creates tables if missing
+1. `init_db()` — creates tables, runs inline migrations
 2. `auto_discover()` — scans strategy directories
-3. `_register_strategies_to_db()` — syncs to DB
+3. `_register_strategies_to_db()` — syncs to DB, creates strategy accounts
 4. `start_scheduler()` — begins cron jobs
 
 **Strategy auto-discovery** (`strategies/registry.py`):
@@ -41,11 +40,11 @@ No test, lint, or typecheck commands exist in this repo.
 3. Add cron job in `scheduler.py:setup_jobs()` if needed
 4. Strategy auto-registers on next startup
 
-**Database**: SQLite with WAL mode. Schema in `database.py:SCHEMA_SQL`. Migrations are inline in `init_db()` — check for `ALTER TABLE` blocks when adding columns.
+**Database**: SQLite with WAL mode at `data/quant.db`. Schema in `database.py:SCHEMA_SQL`. Migrations are inline in `init_db()` — check for `ALTER TABLE` blocks when adding columns.
 
-**Frontend API proxy**: `next.config.mjs` rewrites `/api/*` to `BACKEND_URL` (default `localhost:8000`).
+**Accounts**: Each strategy has its own account (strategy_id set). Do NOT create market-level accounts (strategy_id=NULL).
 
-**Miniapp**: API endpoint in `miniapp/app.js:globalData.apiBase`.
+**Frontend API proxy**: `next.config.mjs` rewrites `/api/*` to `BACKEND_URL`. Chat SSE bypasses proxy and calls backend directly.
 
 ## Key Files
 
@@ -54,12 +53,14 @@ No test, lint, or typecheck commands exist in this repo.
 - `backend/paper_broker.py` — Simulates broker: lot sizes, slippage, commission, T+1 rules
 - `backend/risk_manager.py` — Three-tier risk checks
 - `backend/config.py` — All configurable values with env var overrides
+- `backend/api/chat.py` — SSE streaming for LLM chat
+- `backend/llm/chat_agent.py` — LLM agent with tool calling
 
 ## Environment Variables
 
-Set in `backend/.env` or environment:
+Set in `backend/.env`:
 - `DATA_DIR` — SQLite data directory (defaults to `project_root/data`)
-- `BACKEND_URL` — Frontend proxy target (defaults to `localhost:8000`)
+- `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_MODEL` — LLM config (uses 讯飞 Anthropic-compatible API)
 - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` — Notifications
 - `WX_APPID`, `WX_SECRET` — WeChat miniapp auth
 - `JWT_SECRET` — Auth token signing
@@ -72,6 +73,18 @@ Set in `backend/.env` or environment:
 
 ## LLM Integration
 
-- Chat API: `backend/api/chat.py` — strategy-specific chat sessions
-- Agent implementations: `backend/llm/` — uses `anthropic` SDK
-- Requires `ANTHROPIC_API_KEY` env var for LLM features
+- Provider: 讯飞 (Xunfei) using Anthropic-compatible API at `https://maas-coding-api.cn-huabei-1.xf-yun.com/anthropic`
+- Chat API: `backend/api/chat.py` — SSE streaming with heartbeat
+- Agent: `backend/llm/chat_agent.py` — tool calling, batch tool merging
+- Timeout: 1200s for long-running LLM requests
+
+## Auth & Permissions
+
+- Admin account: phone `13800138000`, password `admin123`
+- Monitor page (`/monitor`) requires `is_admin=true` cookie
+- Password hashing: `hashlib.sha256((password + JWT_SECRET).encode()).hexdigest()`
+
+## Frontend SSE Gotchas
+
+- Chat SSE uses `isStreamingRef` to prevent `useEffect` from overwriting messages when `currentSession` changes
+- SSE bypasses Next.js proxy, directly calls `http://localhost:8000/api/chat/send`

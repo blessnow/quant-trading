@@ -112,7 +112,7 @@ Page({
 
   drawChart() {
     const { curveData, benchmarkData } = this.data
-    if (!curveData || curveData.length < 2) return
+    if (!curveData || curveData.length < 1) return
 
     const query = wx.createSelectorQuery()
     query.select('#detailChart').fields({ node: true, size: true }).exec((res) => {
@@ -131,9 +131,10 @@ Page({
       const chartW = w - 2 * pad.x
 
       const firstVal = curveData[0].total_value
+      const isSingle = curveData.length === 1
       const points = curveData.map((d, i) => ({
         date: d.date,
-        x_ratio: i / Math.max(curveData.length - 1, 1),
+        x_ratio: isSingle ? 0.5 : i / Math.max(curveData.length - 1, 1),
         return_pct: firstVal > 0 ? ((d.total_value - firstVal) / firstVal * 100) : 0,
       }))
 
@@ -192,23 +193,37 @@ Page({
       ctx.fillStyle = '#aaa'
       ctx.font = '16px sans-serif'
       const totalPts = curveData.length
-      const xTickCount = Math.min(5, totalPts)
-      for (let i = 0; i < xTickCount; i++) {
-        const idx = Math.round(i * (totalPts - 1) / Math.max(xTickCount - 1, 1))
-        const dateStr = (curveData[idx].date || '').slice(5)
-        ctx.fillText(dateStr, toX(idx / Math.max(totalPts - 1, 1)), h - pad.bottom + 8)
+      if (isSingle) {
+        const dateStr = (curveData[0].date || '').slice(5)
+        ctx.fillText(dateStr, toX(0.5), h - pad.bottom + 8)
+      } else {
+        const xTickCount = Math.min(5, totalPts)
+        for (let i = 0; i < xTickCount; i++) {
+          const idx = Math.round(i * (totalPts - 1) / Math.max(xTickCount - 1, 1))
+          const dateStr = (curveData[idx].date || '').slice(5)
+          ctx.fillText(dateStr, toX(idx / Math.max(totalPts - 1, 1)), h - pad.bottom + 8)
+        }
       }
 
-      // 策略线
-      ctx.beginPath()
-      ctx.strokeStyle = '#ef4444'
-      ctx.lineWidth = 2
-      points.forEach((p, i) => {
-        const x = toX(p.x_ratio)
-        const y = toY(p.return_pct)
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
-      })
-      ctx.stroke()
+      // 策略线/点
+      if (isSingle) {
+        const x = toX(points[0].x_ratio)
+        const y = toY(points[0].return_pct)
+        ctx.beginPath()
+        ctx.arc(x, y, 4, 0, Math.PI * 2)
+        ctx.fillStyle = '#ef4444'
+        ctx.fill()
+      } else {
+        ctx.beginPath()
+        ctx.strokeStyle = '#ef4444'
+        ctx.lineWidth = 2
+        points.forEach((p, i) => {
+          const x = toX(p.x_ratio)
+          const y = toY(p.return_pct)
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+        })
+        ctx.stroke()
+      }
 
       // 基准虚线
       if (bmPoints.length >= 2) {

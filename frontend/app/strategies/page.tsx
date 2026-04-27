@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import Link from "next/link";
 import { api } from "@/lib/api-client";
 
 export const dynamic = "force-dynamic";
@@ -60,7 +61,7 @@ export default async function StrategiesPage() {
           <h2 className="text-lg font-bold text-[#1a1a2e] mb-4">策略排行榜</h2>
           <div className="space-y-3">
             {ranking.rankings.map((r: any, i: number) => (
-              <div key={r.strategy_id} className="flex items-center gap-3 rounded-xl bg-gray-50 p-3">
+              <Link key={r.strategy_id} href={`/strategies/${r.strategy_id}`} className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 hover:bg-gray-100 transition-colors">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${i === 0 ? "bg-gradient-to-br from-amber-400 to-amber-500" : i === 1 ? "bg-gradient-to-br from-gray-300 to-gray-400" : i === 2 ? "bg-gradient-to-br from-amber-600 to-amber-700" : "bg-gray-200 text-gray-500"}`}>
                   {i + 1}
                 </div>
@@ -74,7 +75,7 @@ export default async function StrategiesPage() {
                 <div className={`text-sm font-bold ${pnlColor(r.total_pnl)}`}>
                   {sign(r.total_pnl)}¥{fmt(r.total_pnl)}
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -92,7 +93,7 @@ export default async function StrategiesPage() {
           const totalPnl = strategyTrades.filter((t: any) => t.side === "SELL").reduce((sum: number, t: any) => sum + (t.pnl ?? 0), 0);
 
           return (
-            <div key={s.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${s.is_active ? "border-black/5" : "border-dashed border-gray-200 opacity-70"}`}>
+            <Link key={s.id} href={`/strategies/${s.id}`} className={`bg-white rounded-2xl border shadow-sm overflow-hidden block hover:shadow-md transition-shadow ${s.is_active ? "border-black/5" : "border-dashed border-gray-200 opacity-70"}`}>
               {/* 策略头部 */}
               <div className="p-5 border-b border-gray-50">
                 <div className="flex items-center justify-between">
@@ -112,14 +113,7 @@ export default async function StrategiesPage() {
                       <div className="text-xs text-gray-300 mt-0.5">调度: {meta.schedule}</div>
                     </div>
                   </div>
-                  <form action={async () => {
-                    "use server";
-                    await api.strategies.toggle(s.id, !s.is_active);
-                  }}>
-                    <button type="submit" className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${s.is_active ? "bg-red-50 text-[#e05555] hover:bg-red-100" : "bg-green-50 text-[#22c55e] hover:bg-green-100"}`}>
-                      {s.is_active ? "暂停" : "启用"}
-                    </button>
-                  </form>
+                  <span className="text-xs text-gray-400">点击查看详情 →</span>
                 </div>
               </div>
 
@@ -176,7 +170,7 @@ export default async function StrategiesPage() {
               {!strategyTrades.length && !strategyPositions.length && (
                 <div className="p-8 text-center text-sm text-gray-300">策略等待首次运行</div>
               )}
-            </div>
+            </Link>
           );
         })}
         </div>
