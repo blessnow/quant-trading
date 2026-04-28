@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
+import { clientWebSocketRoot } from "@/lib/api-base";
 
 interface LogEntry {
   strategy_id: number;
@@ -20,10 +21,7 @@ export function RealtimeLogs() {
   const heartbeatRef = useRef<NodeJS.Timeout | null>(null);
 
   const connect = () => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-    const wsBackendUrl = backendUrl.replace("http", "ws");
-
-    const ws = new WebSocket(`${wsBackendUrl}/ws/logs`);
+    const ws = new WebSocket(`${clientWebSocketRoot()}/ws/logs`);
     wsRef.current = ws;
 
     ws.onopen = () => {

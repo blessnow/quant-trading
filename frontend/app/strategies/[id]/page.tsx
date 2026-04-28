@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { serverBackendBase } from "@/lib/api-base";
 import { StrategyEquityChart } from "@/app/components/StrategyEquityChart";
 import { TradesList, PositionsList } from "@/app/components/LoadMoreList";
 
@@ -77,7 +78,7 @@ export default async function StrategyDetailPage({ params }: { params: Promise<{
     );
   }
 
-  const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
+  const backendUrl = serverBackendBase();
   const authToken = cookieStore.get("auth_token")?.value;
   const { strategy, equityCurve, positions, trades, logs } = await fetchData(strategyId, backendUrl, authToken);
 

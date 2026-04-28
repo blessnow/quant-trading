@@ -8,6 +8,7 @@ import SessionList from "./components/SessionList";
 import MessageList from "./components/MessageList";
 import ChatInput from "./components/ChatInput";
 import PromptTemplates from "./components/PromptTemplates";
+import { clientApiOrigin } from "@/lib/api-base";
 
 interface Strategy {
   id: string;
@@ -166,11 +167,13 @@ export default function ChatPage() {
     setIsLoading(true);
     isStreamingRef.current = true;
 
+    // SSE：默认同源 /api，由 middleware/rewrites 转到后端
+    const sseApiBase = clientApiOrigin();
+
     // SSE 流式响应
     let res;
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-      res = await fetch(`${backendUrl}/api/chat/send`, {
+      res = await fetch(`${sseApiBase}/api/chat/send`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

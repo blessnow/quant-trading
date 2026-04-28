@@ -1,15 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const BACKEND_URL =
-  process.env.BACKEND_URL ||
-  process.env.RAILWAY_SERVICE_BACKEND_URL ||
-  "http://localhost:8000";
+import { serverBackendBase } from "./lib/api-base";
 
 export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (pathname.startsWith("/api/")) {
-    const target = new URL(pathname + search, BACKEND_URL);
+    const target = new URL(pathname + search, serverBackendBase());
     return NextResponse.rewrite(target);
   }
 
