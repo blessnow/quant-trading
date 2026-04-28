@@ -56,6 +56,26 @@ No test, lint, or typecheck commands exist in this repo.
 - `backend/api/chat.py` — SSE streaming for LLM chat
 - `backend/llm/chat_agent.py` — LLM agent with tool calling
 
+## Railway Deployment
+
+Project ID: `55c5c716-d74a-457d-a980-85595938c2ce`
+Environment ID: `5e5725da-3bed-4c1e-8ce4-d7e71f466216`
+
+| Service | ID | Deploy from |
+|---------|----|-------------|
+| Frontend | `af882ee6-a488-42c2-8a84-5e9b679b0d91` | `frontend/` |
+| Backend | `3556c239-8ed9-41ce-a7fe-00073ac206a0` | `backend/` |
+
+```bash
+# Link and deploy frontend
+railway link --project=55c5c716-d74a-457d-a980-85595938c2ce --environment=5e5725da-3bed-4c1e-8ce4-d7e71f466216 --service=af882ee6-a488-42c2-8a84-5e9b679b0d91
+railway up
+
+# Link and deploy backend
+railway link --project=55c5c716-d74a-457d-a980-85595938c2ce --environment=5e5725da-3bed-4c1e-8ce4-d7e71f466216 --service=3556c239-8ed9-41ce-a7fe-00073ac206a0
+railway up
+```
+
 ## Environment Variables
 
 Set in `backend/.env`:
