@@ -3,7 +3,7 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { sendSMS, loginPhone } from "@/lib/auth-api";
+import { sendSMS, loginPhone, authErrorMessage } from "@/lib/auth-api";
 
 function LoginForm() {
   const [phone, setPhone] = useState("");
@@ -39,7 +39,7 @@ function LoginForm() {
         }, 1000);
         setError("");
       } else {
-        setError(res.detail || "发送失败");
+        setError(authErrorMessage(res, "发送失败"));
       }
     } catch {
       setError("网络错误");
@@ -65,18 +65,20 @@ function LoginForm() {
 
     try {
       const res = await loginPhone(phone, loginMode === "code" ? code : undefined, loginMode === "password" ? password : undefined);
-      if (res.token) {
-        login(res.token, {
-          id: res.user_id,
-          nickname: res.nickname,
-          is_member: res.is_member,
-          is_admin: res.is_admin || false,
-          member_expire_at: res.member_expire_at,
+      const token = typeof res.token === "string" ? res.token : undefined;
+      if (token) {
+        login(token, {
+          id: Number(res.user_id),
+          nickname: typeof res.nickname === "string" ? res.nickname : "用户",
+          is_member: Boolean(res.is_member),
+          is_admin: Boolean(res.is_admin),
+          member_expire_at:
+            typeof res.member_expire_at === "string" ? res.member_expire_at : undefined,
         });
         const redirect = searchParams.get("redirect") || "/";
         router.push(redirect);
       } else {
-        setError(res.detail || "登录失败");
+        setError(authErrorMessage(res, "登录失败"));
       }
     } catch {
       setError("网络错误");
@@ -149,6 +151,10 @@ function LoginForm() {
               </div>
               <p className="text-xs text-gray-500 mt-1">测试模式验证码: 123456</p>
             </div>
+          )}
+
+          {loginMode === "password" && (
+            <p className="text-xs text-gray-500">测试管理员：10000000001 / 123456</p>
           )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}

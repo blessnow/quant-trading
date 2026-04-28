@@ -8,25 +8,31 @@ export function serverBackendBase(): string {
 }
 
 /**
- * 浏览器 HTTP：未配 NEXT_PUBLIC_BACKEND_URL 时用同源（相对路径），由 middleware / rewrites 转到后端。
+ * 浏览器 HTTP：未配 NEXT_PUBLIC_BACKEND_URL 时用同源（相对路径），由 middleware 转到后端。
+ * 忽略误配到内网/本机的 NEXT_PUBLIC（旧构建或错误 env 会导致浏览器「网络错误」）。
  */
 export function clientApiOrigin(): string {
-  const u = process.env.NEXT_PUBLIC_BACKEND_URL?.trim();
-  if (u) return u.replace(/\/$/, "");
-  return "";
+  const raw = process.env.NEXT_PUBLIC_BACKEND_URL?.trim() || "";
+  if (!raw) return "";
+  const lower = raw.toLowerCase();
+  if (lower.includes("railway.internal")) return "";
+  if (typeof window !== "undefined" && window.location.hostname !== "localhost") {
+    if (lower.includes("localhost") || lower.includes("127.0.0.1")) return "";
+  }
+  return raw.replace(/\/$/, "");
 }
 
 /**
- * 浏览器 WebSocket：优先 NEXT_PUBLIC；本地开发直连后端；否则同源（需网关把 /ws 转到后端，否则请配公网后端 URL）。
+ * 浏览器 WebSocket：与 clientApiOrigin 同源策略一致，再 http(s)→ws(s)。
  */
 export function clientWebSocketRoot(): string {
-  const u = process.env.NEXT_PUBLIC_BACKEND_URL?.trim().replace(/\/$/, "");
-  if (u) {
-    return u.startsWith("https://")
-      ? `wss://${u.slice("https://".length)}`
-      : u.startsWith("http://")
-        ? `ws://${u.slice("http://".length)}`
-        : u;
+  const httpBase = clientApiOrigin();
+  if (httpBase) {
+    return httpBase.startsWith("https://")
+      ? `wss://${httpBase.slice("https://".length)}`
+      : httpBase.startsWith("http://")
+        ? `ws://${httpBase.slice("http://".length)}`
+        : `ws://${httpBase}`;
   }
   if (typeof window !== "undefined" && window.location.hostname === "localhost") {
     return "ws://127.0.0.1:8000";

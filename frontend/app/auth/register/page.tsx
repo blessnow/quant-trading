@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { sendSMS, registerPhone } from "@/lib/auth-api";
+import { sendSMS, registerPhone, authErrorMessage } from "@/lib/auth-api";
 
 export default function RegisterPage() {
   const [phone, setPhone] = useState("");
@@ -37,7 +37,7 @@ export default function RegisterPage() {
         }, 1000);
         setError("");
       } else {
-        setError(res.detail || "发送失败");
+        setError(authErrorMessage(res, "发送失败"));
       }
     } catch {
       setError("网络错误");
@@ -55,17 +55,19 @@ export default function RegisterPage() {
 
     try {
       const res = await registerPhone(phone, code, undefined, nickname || undefined);
-      if (res.token) {
-        login(res.token, {
-          id: res.user_id,
-          nickname: res.nickname,
-          is_member: res.is_member,
-          is_admin: res.is_admin || false,
-          member_expire_at: res.member_expire_at,
+      const token = typeof res.token === "string" ? res.token : undefined;
+      if (token) {
+        login(token, {
+          id: Number(res.user_id),
+          nickname: typeof res.nickname === "string" ? res.nickname : "用户",
+          is_member: Boolean(res.is_member),
+          is_admin: Boolean(res.is_admin),
+          member_expire_at:
+            typeof res.member_expire_at === "string" ? res.member_expire_at : undefined,
         });
         router.push("/");
       } else {
-        setError(res.detail || "注册失败");
+        setError(authErrorMessage(res, "注册失败"));
       }
     } catch {
       setError("网络错误");

@@ -3,7 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { createNativeOrder, checkPayment, confirmNativeTest } from "@/lib/auth-api";
+import {
+  createNativeOrder,
+  checkPayment,
+  confirmNativeTest,
+  authErrorMessage,
+} from "@/lib/auth-api";
 
 const showNativeTestConfirm =
   process.env.NODE_ENV === "development";
@@ -70,16 +75,17 @@ export default function MembershipPage() {
 
     try {
       const res = await createNativeOrder(selectedPlan, token);
-      if (res.session_id) {
+      const sid = typeof res.session_id === "string" ? res.session_id : "";
+      if (sid) {
         setPaymentSession({
-          sessionId: res.session_id,
-          qrCodeUrl: res.qr_code_url,
-          orderNo: res.order_no,
-          testMode: res.test_mode,
+          sessionId: sid,
+          qrCodeUrl: typeof res.qr_code_url === "string" ? res.qr_code_url : "",
+          orderNo: typeof res.order_no === "string" ? res.order_no : "",
+          testMode: Boolean(res.test_mode),
         });
         setPaymentStatus("pending");
       } else {
-        setError(res.detail || "创建订单失败");
+        setError(authErrorMessage(res, "创建订单失败"));
       }
     } catch {
       setError("网络错误");
