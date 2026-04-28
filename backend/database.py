@@ -8,10 +8,9 @@ import os
 import logging
 
 class DatabasePool:
-    """数据库连接池"""
+    """数据库连接池 — SQLite只需单连接"""
     _instance: Optional['DatabasePool'] = None
-    _pool: list[aiosqlite.Connection] = []
-    _pool_size: int = 10
+    _conn: Optional[aiosqlite.Connection] = None
     _lock = asyncio.Lock()
     
     def __new__(cls):
@@ -19,48 +18,34 @@ class DatabasePool:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    async def initialize(self, pool_size: int = 10):
-        """初始化连接池"""
-        self._pool_size = pool_size
+    async def initialize(self, pool_size: int = 1):
+        """初始化单连接"""
         os.makedirs(DATA_DIR, exist_ok=True)
-        
-        for _ in range(pool_size):
-            conn = await aiosqlite.connect(DB_PATH)
-            conn.row_factory = aiosqlite.Row
-            await conn.execute("PRAGMA journal_mode=WAL")
-            await conn.execute("PRAGMA foreign_keys=ON")
-            await conn.execute("PRAGMA synchronous=NORMAL")
-            await conn.execute("PRAGMA cache_size=-64000")
-            self._pool.append(conn)
-        
-        logging.info(f"[数据库] 连接池初始化完成，大小={pool_size}")
-    
+
+        self._conn = await aiosqlite.connect(DB_PATH)
+        self._conn.row_factory = aiosqlite.Row
+        await self._conn.execute("PRAGMA journal_mode=WAL")
+        await self._conn.execute("PRAGMA foreign_keys=ON")
+        await self._conn.execute("PRAGMA synchronous=NORMAL")
+        await self._conn.execute("PRAGMA busy_timeout=30000")
+
+        logging.info("[数据库] 连接已初始化")
+
     async def acquire(self) -> aiosqlite.Connection:
         """获取连接"""
         async with self._lock:
-            if self._pool:
-                return self._pool.pop()
-            conn = await aiosqlite.connect(DB_PATH)
-            conn.row_factory = aiosqlite.Row
-            await conn.execute("PRAGMA journal_mode=WAL")
-            await conn.execute("PRAGMA foreign_keys=ON")
-            return conn
-    
+            return self._conn
+
     async def release(self, conn: aiosqlite.Connection):
-        """释放连接"""
-        async with self._lock:
-            if len(self._pool) < self._pool_size:
-                self._pool.append(conn)
-            else:
-                await conn.close()
+        """释放连接 — SQLite单连接无需归还"""
+        pass
     
     async def close_all(self):
-        """关闭所有连接"""
-        async with self._lock:
-            for conn in self._pool:
-                await conn.close()
-            self._pool.clear()
-        logging.info("[数据库] 连接池已关闭")
+        """关闭连接"""
+        if self._conn:
+            await self._conn.close()
+            self._conn = None
+        logging.info("[数据库] 连接已关闭")
 
 db_pool = DatabasePool()
 
