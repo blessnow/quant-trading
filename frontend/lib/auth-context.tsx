@@ -41,7 +41,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUser = async (t: string) => {
     try {
-      const res = await fetch("http://localhost:8000/api/wechat/me", {
+      const apiBase = typeof window !== "undefined" && window.location.hostname === "localhost"
+        ? "http://localhost:8000"
+        : "";
+      const res = await fetch(`${apiBase}/api/wechat/me`, {
         headers: { Authorization: `Bearer ${t}` },
       });
       if (res.ok) {
@@ -54,9 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // token无效，清除
         localStorage.removeItem("token");
         setToken(null);
+        setUser(null);
       }
     } catch (e) {
       console.error("获取用户信息失败", e);
+      // 网络错误也清除token
+      localStorage.removeItem("token");
+      setToken(null);
+      setUser(null);
     } finally {
       setLoading(false);
     }
