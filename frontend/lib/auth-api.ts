@@ -1,4 +1,12 @@
-const API_BASE = "http://localhost:8000";
+// 登录相关API直接调用后端（SSE需要绕过Next.js proxy）
+const getBackendUrl = () => {
+  if (typeof window === "undefined") return "http://localhost:8000";
+  if (window.location.hostname === "localhost") return "http://localhost:8000";
+  // Railway生产环境：使用环境变量或当前域名
+  return process.env.NEXT_PUBLIC_BACKEND_URL || window.location.origin;
+};
+
+const API_BASE = getBackendUrl();
 
 export async function sendSMS(phone: string) {
   const res = await fetch(`${API_BASE}/api/auth/send-sms`, {

@@ -43,6 +43,10 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("[启动] 数据库初始化完成")
 
+    # 创建测试用户
+    await _create_test_users()
+    logger.info("[启动] 测试用户检查完成")
+
     count = auto_discover()
     logger.info(f"[启动] 策略注册完成: {count} 个策略")
 
@@ -202,6 +206,41 @@ async def _register_strategies_to_db():
             )
         await db.commit()
         logger.info(f"[启动] 为 {len(strategies)} 个策略创建独立账户，每个 {config.INITIAL_CAPITAL_PER_STRATEGY:.0f} 元")
+    finally:
+        await db.close()
+
+
+async def _create_test_users():
+    """创建测试用户：admin 和 test"""
+    import hashlib
+    from database import get_db
+    import config
+
+    db = await get_db()
+    try:
+        def _hash_password(password: str) -> str:
+            return hashlib.sha256((password + config.JWT_SECRET).encode()).hexdigest()
+
+        # 创建 admin 用户
+        admin_password = _hash_password("admin123")
+        await db.execute(
+            """INSERT OR IGNORE INTO users 
+               (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
+               VALUES (?, ?, ?, ?, 'phone', 1, 1)""",
+            ("phone_admin", "13800000001", admin_password, "管理员")
+        )
+
+        # 创建测试用户
+        test_password = _hash_password("test123")
+        await db.execute(
+            """INSERT OR IGNORE INTO users 
+               (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
+               VALUES (?, ?, ?, ?, 'phone', 0, 0)""",
+            ("phone_test", "13800000002", test_password, "测试用户")
+        )
+
+        await db.commit()
+        logger.info("[启动] 测试用户已创建: admin(13800000001) / test(13800000002)")
     finally:
         await db.close()
 
