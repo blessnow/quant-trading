@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { clientApiOrigin } from "@/lib/api-base";
 
 interface User {
   id: number;
@@ -41,8 +42,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUser = async (t: string) => {
     try {
-      const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL || "";
-      const res = await fetch(`${apiBase}/api/wechat/me`, {
+      const res = await fetch(`${clientApiOrigin()}/api/wechat/me`, {
         headers: { Authorization: `Bearer ${t}` },
       });
       if (res.ok) {

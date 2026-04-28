@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { serverBackendBase } from "@/lib/api-base";
 import { api } from "@/lib/api-client";
 import { RealtimeLogs } from "./components/RealtimeLogs";
 import { LoginGuard } from "@/app/components/LoginGuard";
@@ -6,8 +7,9 @@ import { LoginGuard } from "@/app/components/LoginGuard";
 export const dynamic = "force-dynamic";
 
 async function getSchedulerJobs() {
+  const base = serverBackendBase();
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/scheduler/jobs`, {
+    const res = await fetch(`${base}/api/scheduler/jobs`, {
       cache: "no-store",
     });
     return res.json();
@@ -17,8 +19,9 @@ async function getSchedulerJobs() {
 }
 
 async function getHealth() {
+  const base = serverBackendBase();
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/health`, {
+    const res = await fetch(`${base}/api/health`, {
       cache: "no-store",
     });
     return res.json();
@@ -28,8 +31,9 @@ async function getHealth() {
 }
 
 async function getStrategyLogs() {
+  const base = serverBackendBase();
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}/api/strategies/logs?limit=50`, {
+    const res = await fetch(`${base}/api/strategies/logs?limit=50`, {
       cache: "no-store",
     });
     return res.json();

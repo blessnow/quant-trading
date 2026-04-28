@@ -1,6 +1,7 @@
-const API_BASE = typeof window === "undefined"
-  ? `${process.env.BACKEND_URL || "http://localhost:8000"}/api`
-  : "/api";
+import { serverBackendBase } from "./api-base";
+
+const API_BASE =
+  typeof window === "undefined" ? `${serverBackendBase()}/api` : "/api";
 
 function fetchAPI<T>(path: string, init?: RequestInit, authToken?: string): Promise<T> {
   const headers: Record<string, string> = {

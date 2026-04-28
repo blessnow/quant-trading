@@ -1,6 +1,7 @@
-// 登录相关API通过Next.js proxy访问后端
-// 本地开发时直接访问后端，生产环境走proxy
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+import { clientApiOrigin } from "./api-base";
+
+// 默认同源 /api，由 middleware 转到后端
+const API_BASE = clientApiOrigin();
 
 export async function sendSMS(phone: string) {
   const res = await fetch(`${API_BASE}/api/auth/send-sms`, {
