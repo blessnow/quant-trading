@@ -1,5 +1,3 @@
-import { clientApiOrigin } from "./api-base";
-
 /** 供页面展示错误文案（避免 unknown 触发 TS 报错） */
 export function authErrorMessage(
   res: Record<string, unknown>,
@@ -9,14 +7,14 @@ export function authErrorMessage(
   return typeof d === "string" && d.length > 0 ? d : fallback;
 }
 
+/** 始终走同源 `/api`，避免 NEXT_PUBLIC 在构建时被内联成 localhost 打进线上包 */
 async function fetchAuthJson(
   path: string,
   init?: RequestInit
 ): Promise<Record<string, unknown>> {
-  const base = clientApiOrigin();
   let res: Response;
   try {
-    res = await fetch(`${base}${path}`, init);
+    res = await fetch(path, init);
   } catch {
     return { detail: "网络异常，请检查网络或稍后重试" };
   }
