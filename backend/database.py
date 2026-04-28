@@ -292,7 +292,7 @@ CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
 
 async def init_db():
     """初始化数据库"""
-    await db_pool.initialize(pool_size=10)
+    await db_pool.initialize()
     
     db = await get_db()
     try:
