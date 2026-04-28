@@ -4,10 +4,13 @@ import os
 # 项目根目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
-DATA_DIR = os.path.join(os.environ.get("DATA_DIR", PROJECT_DIR), "data")
+
+# 数据存储目录（数据库、日志等）- 与代码分离，可被volume挂载
+STORAGE_DIR = os.environ.get("STORAGE_DIR", os.path.join(PROJECT_DIR, "storage"))
+DATA_DIR = STORAGE_DIR  # 兼容旧代码
 
 # 数据库
-DB_PATH = os.path.join(DATA_DIR, "quant.db")
+DB_PATH = os.path.join(STORAGE_DIR, "quant.db")
 
 # 初始资金（单位：RMB）
 INITIAL_CAPITAL_A_SHARE = 500_000.0
