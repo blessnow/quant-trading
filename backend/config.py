@@ -6,7 +6,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(BASE_DIR)
 
 # 数据存储目录（数据库、日志等）- 与代码分离，可被volume挂载
-STORAGE_DIR = os.environ.get("STORAGE_DIR", os.path.join(PROJECT_DIR, "storage"))
+_storage_env = os.environ.get("STORAGE_DIR", "")
+STORAGE_DIR = _storage_env if _storage_env else os.path.join(PROJECT_DIR, "storage")
 DATA_DIR = STORAGE_DIR  # 兼容旧代码
 
 # 数据库
