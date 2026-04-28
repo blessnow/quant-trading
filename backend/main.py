@@ -235,22 +235,20 @@ async def _create_test_users():
     try:
         pw = hash_password("123456")
 
-        await db.execute("DELETE FROM users WHERE phone IN ('10000000001', '10000000002', '10000000003')")
-
         await db.execute(
-            """INSERT INTO users 
+            """INSERT OR REPLACE INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
                VALUES ('phone_admin', '10000000001', ?, '管理员', 'phone', 1, 1)""",
             (pw,)
         )
         await db.execute(
-            """INSERT INTO users 
+            """INSERT OR REPLACE INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
                VALUES ('phone_member', '10000000002', ?, '会员用户', 'phone', 1, 0)""",
             (pw,)
         )
         await db.execute(
-            """INSERT INTO users 
+            """INSERT OR REPLACE INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
                VALUES ('phone_guest', '10000000003', ?, '普通用户', 'phone', 0, 0)""",
             (pw,)
