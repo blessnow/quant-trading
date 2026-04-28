@@ -9,7 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/data
+# 确保所有目录都是Python包
+RUN touch /app/__init__.py /app/data/__init__.py /app/api/__init__.py /app/llm/__init__.py /app/strategies/__init__.py /app/models/__init__.py
 
 EXPOSE 8000
 
