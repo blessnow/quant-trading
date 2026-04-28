@@ -8,44 +8,34 @@ import os
 import logging
 
 class DatabasePool:
-    """数据库连接池 — SQLite只需单连接"""
+    """数据库连接池"""
     _instance: Optional['DatabasePool'] = None
-    _conn: Optional[aiosqlite.Connection] = None
-    _lock = asyncio.Lock()
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
-    async def initialize(self, pool_size: int = 1):
-        """初始化单连接"""
+
+    async def initialize(self):
+        """初始化"""
         os.makedirs(DATA_DIR, exist_ok=True)
-
-        self._conn = await aiosqlite.connect(DB_PATH)
-        self._conn.row_factory = aiosqlite.Row
-        await self._conn.execute("PRAGMA journal_mode=WAL")
-        await self._conn.execute("PRAGMA foreign_keys=ON")
-        await self._conn.execute("PRAGMA synchronous=NORMAL")
-        await self._conn.execute("PRAGMA busy_timeout=30000")
-
-        logging.info("[数据库] 连接已初始化")
+        logging.info("[数据库] 已初始化（每次请求新建连接）")
 
     async def acquire(self) -> aiosqlite.Connection:
-        """获取连接"""
-        async with self._lock:
-            return self._conn
+        """获取新连接"""
+        conn = await aiosqlite.connect(DB_PATH, isolation_level=None)
+        conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA journal_mode=WAL")
+        await conn.execute("PRAGMA busy_timeout=30000")
+        await conn.execute("PRAGMA foreign_keys=ON")
+        return conn
 
     async def release(self, conn: aiosqlite.Connection):
-        """释放连接 — SQLite单连接无需归还"""
-        pass
-    
-    async def close_all(self):
         """关闭连接"""
-        if self._conn:
-            await self._conn.close()
-            self._conn = None
-        logging.info("[数据库] 连接已关闭")
+        await conn.close()
+
+    async def close_all(self):
+        logging.info("[数据库] 已关闭")
 
 db_pool = DatabasePool()
 
