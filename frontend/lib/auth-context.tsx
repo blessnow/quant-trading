@@ -41,9 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUser = async (t: string) => {
     try {
-      const apiBase = typeof window !== "undefined" && window.location.hostname === "localhost"
-        ? "http://localhost:8000"
-        : "";
+      const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL || "";
       const res = await fetch(`${apiBase}/api/wechat/me`, {
         headers: { Authorization: `Bearer ${t}` },
       });
