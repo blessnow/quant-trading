@@ -235,34 +235,25 @@ async def _create_test_users():
     try:
         pw = hash_password("123456")
 
-        await db.execute(
-            """INSERT OR IGNORE INTO users 
-               (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
-               VALUES (?, ?, ?, ?, 'phone', 1, 1)""",
-            ("phone_admin", "10000000001", pw, "管理员")
-        )
-        await db.execute(
-            "UPDATE users SET is_member=1, is_admin=1 WHERE phone='10000000001'"
-        )
+        await db.execute("DELETE FROM users WHERE phone IN ('10000000001', '10000000002', '10000000003')")
 
         await db.execute(
-            """INSERT OR IGNORE INTO users 
+            """INSERT INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
-               VALUES (?, ?, ?, ?, 'phone', 1, 0)""",
-            ("phone_member", "10000000002", pw, "会员用户")
+               VALUES ('phone_admin', '10000000001', ?, '管理员', 'phone', 1, 1)""",
+            (pw,)
         )
         await db.execute(
-            "UPDATE users SET is_member=1, is_admin=0 WHERE phone='10000000002'"
-        )
-
-        await db.execute(
-            """INSERT OR IGNORE INTO users 
+            """INSERT INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
-               VALUES (?, ?, ?, ?, 'phone', 0, 0)""",
-            ("phone_guest", "10000000003", pw, "普通用户")
+               VALUES ('phone_member', '10000000002', ?, '会员用户', 'phone', 1, 0)""",
+            (pw,)
         )
         await db.execute(
-            "UPDATE users SET is_member=0, is_admin=0 WHERE phone='10000000003'"
+            """INSERT INTO users 
+               (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
+               VALUES ('phone_guest', '10000000003', ?, '普通用户', 'phone', 0, 0)""",
+            (pw,)
         )
 
         await db.commit()
