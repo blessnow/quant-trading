@@ -25,6 +25,7 @@ interface Position {
   avg_cost: number;
   current_price: number;
   unrealized_pnl: number;
+  unrealized_pnl_pct: number;
   market_value: number;
   buy_date: string;
   sellable_date: string;
@@ -32,6 +33,11 @@ interface Position {
 
 function fmt(n: number) {
   return n.toLocaleString("zh-CN", { maximumFractionDigits: 0 });
+}
+
+function fmtPct(n: number) {
+  const pct = (n * 100).toFixed(2);
+  return n > 0 ? `+${pct}%` : `${pct}%`;
 }
 
 function pnlColor(n: number) {
@@ -42,6 +48,12 @@ function sign(n: number) {
   return n > 0 ? "+" : "";
 }
 
+function holdDays(buyDate: string): number {
+  const buy = new Date(buyDate);
+  const now = new Date();
+  return Math.floor((now.getTime() - buy.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 interface LoadMoreListProps<T> {
   initialData: T[];
   initialTotal: number;
@@ -50,6 +62,7 @@ interface LoadMoreListProps<T> {
   title: string;
   emptyText: string;
   pageSize: number;
+  header?: React.ReactNode;
 }
 
 function LoadMoreList<T extends { id: number }>({
@@ -60,6 +73,7 @@ function LoadMoreList<T extends { id: number }>({
   title,
   emptyText,
   pageSize,
+  header,
 }: LoadMoreListProps<T>) {
   const [data, setData] = useState<T[]>(initialData);
   const [total, setTotal] = useState(initialTotal);
@@ -114,6 +128,7 @@ function LoadMoreList<T extends { id: number }>({
         {title} <span className="text-sm font-normal text-gray-400">{total}条</span>
       </h2>
       <div className="overflow-x-auto">
+        {header}
         {data.map((item) => renderItem(item))}
       </div>
       {/* 底部加载触发器 */}
@@ -159,6 +174,17 @@ export function TradesList({ strategyId, initialTrades }: { strategyId: number; 
           </span>
         </div>
       )}
+      header={
+        <div className="border-b border-gray-100 py-2 flex items-center text-xs text-gray-400 font-medium">
+          <span className="w-20 shrink-0">时间</span>
+          <span className="w-32 shrink-0">代码</span>
+          <span className="w-16 shrink-0">方向</span>
+          <span className="text-right w-16 shrink-0">价格</span>
+          <span className="text-right w-16 shrink-0">数量</span>
+          <span className="text-right w-20 shrink-0">金额</span>
+          <span className="text-right flex-1">盈亏</span>
+        </div>
+      }
     />
   );
 }
@@ -181,16 +207,33 @@ export function PositionsList({ strategyId, initialPositions }: { strategyId: nu
       renderItem={(p) => (
         <div key={p.id} className="border-b border-gray-50 py-2.5 flex items-center text-sm">
           <span className="font-mono text-xs font-semibold text-[#1a1a2e] w-20 shrink-0">{p.symbol}</span>
-          <span className="text-gray-700 w-24 shrink-0">{p.name}</span>
-          <span className="text-right w-16 shrink-0">{p.shares}</span>
-          <span className="text-right text-gray-500 w-16 shrink-0">{p.avg_cost.toFixed(2)}</span>
-          <span className="text-right w-16 shrink-0">{p.current_price.toFixed(2)}</span>
-          <span className="text-right w-20 shrink-0">¥{fmt(p.market_value || p.shares * p.current_price)}</span>
-          <span className={`text-right font-semibold flex-1 ${pnlColor(p.unrealized_pnl)}`}>
+          <span className="text-gray-700 w-20 shrink-0">{p.name}</span>
+          <span className="text-right w-14 shrink-0">{p.shares}</span>
+          <span className="text-right text-gray-500 w-14 shrink-0">{p.avg_cost.toFixed(2)}</span>
+          <span className="text-right w-14 shrink-0">{p.current_price.toFixed(2)}</span>
+          <span className="text-right w-16 shrink-0">¥{fmt(p.market_value || p.shares * p.current_price)}</span>
+          <span className={`text-right font-semibold w-14 shrink-0 ${pnlColor(p.unrealized_pnl)}`}>
             {sign(p.unrealized_pnl)}¥{fmt(p.unrealized_pnl)}
           </span>
+          <span className={`text-right w-12 shrink-0 ${pnlColor(p.unrealized_pnl_pct)}`}>
+            {fmtPct(p.unrealized_pnl_pct)}
+          </span>
+          <span className="text-right text-gray-400 w-10 shrink-0">{holdDays(p.buy_date)}天</span>
         </div>
       )}
+      header={
+        <div className="border-b border-gray-100 py-2 flex items-center text-xs text-gray-400 font-medium">
+          <span className="w-20 shrink-0">代码</span>
+          <span className="w-20 shrink-0">名称</span>
+          <span className="text-right w-14 shrink-0">持仓</span>
+          <span className="text-right w-14 shrink-0">成本</span>
+          <span className="text-right w-14 shrink-0">现价</span>
+          <span className="text-right w-16 shrink-0">市值</span>
+          <span className="text-right w-14 shrink-0">盈亏</span>
+          <span className="text-right w-12 shrink-0">收益率</span>
+          <span className="text-right w-10 shrink-0">天数</span>
+        </div>
+      }
     />
   );
 }
