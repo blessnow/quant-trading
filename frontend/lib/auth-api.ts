@@ -1,8 +1,6 @@
 // 登录相关API通过Next.js proxy访问后端
 // 本地开发时直接访问后端，生产环境走proxy
-const API_BASE = typeof window !== "undefined" && window.location.hostname === "localhost"
-  ? "http://localhost:8000"
-  : "";  // 生产环境使用相对路径，通过Next.js rewrite代理
+const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
 export async function sendSMS(phone: string) {
   const res = await fetch(`${API_BASE}/api/auth/send-sms`, {
