@@ -9,7 +9,7 @@ venv/
 node_modules/
 .DS_Store
 .env
-data/*
+storage/*
 frontend/.next/
 frontend/node_modules/
 miniapp/node_modules/

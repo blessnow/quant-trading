@@ -15,9 +15,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from database import init_db
+from database import init_db, close_db
+from cache import init_redis, close_redis
 from scheduler import start_scheduler
 from strategies.registry import auto_discover
+from rate_limit import setup_rate_limit
 from api.portfolio import router as portfolio_router
 from api.strategies import router as strategies_router
 from api.trades import router as trades_router
@@ -40,7 +42,6 @@ ws_log_connections: list[WebSocket] = []
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动
     logger.info("=" * 60)
     logger.info("高频量化交易系统启动")
     logger.info("=" * 60)
@@ -48,7 +49,9 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("[启动] 数据库初始化完成")
 
-    # 创建测试用户
+    await init_redis()
+    logger.info("[启动] 缓存初始化完成")
+
     await _create_test_users()
     logger.info("[启动] 测试用户检查完成")
 
@@ -64,11 +67,10 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # 关闭
     from scheduler import scheduler
-    from database import close_db
     if scheduler.running:
         scheduler.shutdown()
+    await close_redis()
     await close_db()
     logger.info("[关闭] 系统已停止")
 
@@ -79,6 +81,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+setup_rate_limit(app)
 
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -217,17 +221,13 @@ async def _register_strategies_to_db():
 
 async def _create_test_users():
     """创建测试用户：admin 和 test"""
-    import hashlib
     from database import get_db
     import config
+    from auth import hash_password
 
     db = await get_db()
     try:
-        def _hash_password(password: str) -> str:
-            return hashlib.sha256((password + config.JWT_SECRET).encode()).hexdigest()
-
-        # 创建 admin 用户
-        admin_password = _hash_password("admin123")
+        admin_password = hash_password("admin123")
         await db.execute(
             """INSERT OR IGNORE INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
@@ -235,8 +235,7 @@ async def _create_test_users():
             ("phone_admin", "13800000001", admin_password, "管理员")
         )
 
-        # 创建测试用户
-        test_password = _hash_password("test123")
+        test_password = hash_password("test123")
         await db.execute(
             """INSERT OR IGNORE INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
