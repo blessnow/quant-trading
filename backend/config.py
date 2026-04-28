@@ -45,9 +45,9 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "")
 
 # 服务配置
-API_HOST = "0.0.0.0"
-API_PORT = 8000
-FRONTEND_URL = "http://localhost:3000"
+API_HOST = os.environ.get("API_HOST", "0.0.0.0")
+API_PORT = int(os.environ.get("PORT", os.environ.get("API_PORT", "8000")))
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 # 微信小程序配置（测试号）
 WX_APPID = os.environ.get("WX_APPID", "wx_test_appid")
