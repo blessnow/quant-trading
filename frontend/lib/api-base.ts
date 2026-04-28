@@ -16,8 +16,13 @@ export function clientApiOrigin(): string {
   if (!raw) return "";
   const lower = raw.toLowerCase();
   if (lower.includes("railway.internal")) return "";
-  if (typeof window !== "undefined" && window.location.hostname !== "localhost") {
-    if (lower.includes("localhost") || lower.includes("127.0.0.1")) return "";
+  const onLocalPage =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1");
+  if (lower.includes("localhost") || lower.includes("127.0.0.1")) {
+    // 构建/SSR 无 window，或生产域名：禁止把浏览器指到本机 loopback
+    if (!onLocalPage) return "";
   }
   return raw.replace(/\/$/, "");
 }

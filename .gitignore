@@ -9,6 +9,8 @@ venv/
 node_modules/
 .DS_Store
 .env
+frontend/.env.local
+frontend/.env*.local
 storage/*
 frontend/.next/
 frontend/node_modules/
