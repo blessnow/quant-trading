@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { createNativeOrder, checkPayment, confirmNativeTest } from "@/lib/auth-api";
 
+const showNativeTestConfirm =
+  process.env.NODE_ENV === "development";
+
 const PLANS = [
   { id: "monthly", name: "月度会员", price: 49, days: 30 },
   { id: "yearly", name: "年度会员", price: 399, days: 365, recommend: true },
@@ -169,13 +172,17 @@ export default function MembershipPage() {
             </div>
             <p className="text-gray-400 mb-4">请使用微信扫描二维码完成支付</p>
             <p className="text-sm text-gray-500">订单号: {paymentSession.orderNo}</p>
+            {!paymentSession.testMode && (
+              <p className="text-xs text-gray-600 mt-2">支付完成后将自动确认，请勿关闭页面</p>
+            )}
 
-            {paymentSession.testMode && (
+            {showNativeTestConfirm && paymentSession.testMode && (
               <button
+                type="button"
                 onClick={handleConfirmTest}
                 className="mt-4 px-6 py-2 bg-amber-500 text-amber-900 font-bold rounded-lg hover:bg-amber-400 transition-colors"
               >
-                测试模式：确认支付
+                本地开发：模拟确认支付
               </button>
             )}
           </div>

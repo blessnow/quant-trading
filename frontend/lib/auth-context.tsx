@@ -50,21 +50,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         setUser(data);
-        // 同步到cookie供Server Component读取
         document.cookie = `is_member=${data.is_member ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
         document.cookie = `is_admin=${data.is_admin ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
       } else {
-        // token无效，清除
         localStorage.removeItem("token");
         setToken(null);
         setUser(null);
+        document.cookie = "auth_token=; path=/; max-age=0";
       }
     } catch (e) {
       console.error("获取用户信息失败", e);
-      // 网络错误也清除token
       localStorage.removeItem("token");
       setToken(null);
       setUser(null);
+      document.cookie = "auth_token=; path=/; max-age=0";
     } finally {
       setLoading(false);
     }
@@ -74,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("token", newToken);
     setToken(newToken);
     setUser(newUser);
+    document.cookie = `auth_token=${newToken}; path=/; max-age=${60 * 60 * 24 * 365}`;
     document.cookie = `is_member=${newUser.is_member ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
     document.cookie = `is_admin=${newUser.is_admin ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
   };
@@ -82,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("token");
     setToken(null);
     setUser(null);
+    document.cookie = "auth_token=; path=/; max-age=0";
     document.cookie = "is_member=; path=/; max-age=0";
     document.cookie = "is_admin=; path=/; max-age=0";
   };

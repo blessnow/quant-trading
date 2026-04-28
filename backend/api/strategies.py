@@ -1,12 +1,40 @@
 """策略管理 API"""
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 
 from database import get_db
+from api.wechat_auth import verify_token
 
 router = APIRouter(prefix="/api/strategies", tags=["strategies"])
+
+
+async def require_member(authorization: Optional[str] = None):
+    payload = verify_token(authorization)
+    if not payload:
+        raise HTTPException(status_code=401, detail="未登录")
+    db = await get_db()
+    try:
+        async with db.execute(
+            "SELECT is_member, is_admin FROM users WHERE id=?", (payload["user_id"],)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail="用户不存在")
+        if not row[0] and not row[1]:
+            raise HTTPException(status_code=403, detail="需要会员权限")
+        return payload
+    finally:
+        await db.close()
+
+
+async def require_login(authorization: Optional[str] = None):
+    payload = verify_token(authorization)
+    if not payload:
+        raise HTTPException(status_code=401, detail="未登录")
+    return payload
 
 
 @router.get("")
@@ -43,7 +71,8 @@ class ToggleRequest(BaseModel):
 
 
 @router.put("/{strategy_id}/toggle")
-async def toggle_strategy(strategy_id: int, req: ToggleRequest):
+async def toggle_strategy(strategy_id: int, req: ToggleRequest, authorization: Optional[str] = Header(None)):
+    await require_member(authorization)
     db = await get_db()
     try:
         await db.execute(
@@ -61,7 +90,8 @@ class ParamsRequest(BaseModel):
 
 
 @router.put("/{strategy_id}/params")
-async def update_params(strategy_id: int, req: ParamsRequest):
+async def update_params(strategy_id: int, req: ParamsRequest, authorization: Optional[str] = Header(None)):
+    await require_member(authorization)
     db = await get_db()
     try:
         # 保存历史
@@ -128,8 +158,9 @@ async def strategy_ranking(period: str = "month"):
 
 
 @router.get("/logs")
-async def strategy_logs(strategy_id: int = None, limit: int = 100):
+async def strategy_logs(strategy_id: int = None, limit: int = 100, authorization: Optional[str] = Header(None)):
     """策略执行日志"""
+    await require_login(authorization)
     db = await get_db()
     try:
         if strategy_id:
@@ -159,8 +190,9 @@ async def strategy_logs(strategy_id: int = None, limit: int = 100):
 
 
 @router.get("/{strategy_id}")
-async def get_strategy(strategy_id: int):
+async def get_strategy(strategy_id: int, authorization: Optional[str] = Header(None)):
     """获取单个策略详情"""
+    await require_login(authorization)
     db = await get_db()
     try:
         async with db.execute("""
@@ -191,8 +223,9 @@ async def get_strategy(strategy_id: int):
 
 
 @router.get("/{strategy_id}/equity-curve")
-async def strategy_equity_curve(strategy_id: int, days: int = 90):
+async def strategy_equity_curve(strategy_id: int, days: int = 90, authorization: Optional[str] = Header(None)):
     """策略收益曲线（每天只返回最新一条）"""
+    await require_member(authorization)
     db = await get_db()
     try:
         async with db.execute("""
@@ -217,8 +250,9 @@ async def strategy_equity_curve(strategy_id: int, days: int = 90):
 
 
 @router.get("/{strategy_id}/positions")
-async def strategy_positions(strategy_id: int):
+async def strategy_positions(strategy_id: int, authorization: Optional[str] = Header(None)):
     """策略当前持仓"""
+    await require_member(authorization)
     db = await get_db()
     try:
         async with db.execute("""
@@ -245,8 +279,9 @@ async def strategy_positions(strategy_id: int):
 
 
 @router.get("/{strategy_id}/trades")
-async def strategy_trades(strategy_id: int, limit: int = 20, offset: int = 0):
+async def strategy_trades(strategy_id: int, limit: int = 20, offset: int = 0, authorization: Optional[str] = Header(None)):
     """策略历史交易（支持分页）"""
+    await require_member(authorization)
     db = await get_db()
     try:
         # 获取总数

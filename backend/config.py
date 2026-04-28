@@ -53,10 +53,13 @@ FRONTEND_URL = "http://localhost:3000"
 WX_APPID = os.environ.get("WX_APPID", "wx_test_appid")
 WX_SECRET = os.environ.get("WX_SECRET", "wx_test_secret")
 
-# 微信支付配置（测试）
-WX_MCH_ID = os.environ.get("WX_MCH_ID", "")           # 商户号
-WX_MCH_KEY = os.environ.get("WX_MCH_KEY", "")          # 商户API密钥
+# 微信支付配置（APIv3；WX_MCH_ID 为空为 mock）
+WX_MCH_ID = os.environ.get("WX_MCH_ID", "")
+WX_MCH_KEY = os.environ.get("WX_MCH_KEY", "")  # 遗留 V2，仅兼容旧文档
 WX_PAY_NOTIFY_URL = os.environ.get("WX_PAY_NOTIFY_URL", "https://your-domain.com/api/pay/notify")
+WX_MCH_SERIAL_NO = os.environ.get("WX_MCH_SERIAL_NO", "")
+WX_API_V3_KEY = os.environ.get("WX_API_V3_KEY", "")
+WX_MCH_PRIVATE_KEY_PATH = os.environ.get("WX_MCH_PRIVATE_KEY_PATH", "")
 
 # JWT配置
 JWT_SECRET = os.environ.get("JWT_SECRET", "quant-trading-jwt-secret-key-2026")

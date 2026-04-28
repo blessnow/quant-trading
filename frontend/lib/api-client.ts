@@ -2,10 +2,23 @@ const API_BASE = typeof window === "undefined"
   ? `${process.env.BACKEND_URL || "http://localhost:8000"}/api`
   : "/api";
 
-async function fetchAPI<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init);
-  if (!res.ok) throw new Error(`API Error: ${res.status}`);
-  return res.json();
+function fetchAPI<T>(path: string, init?: RequestInit, authToken?: string): Promise<T> {
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> || {}),
+  };
+
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
+  const res = fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers,
+  }).then(r => {
+    if (!r.ok) throw new Error(`API Error: ${r.status}`);
+    return r.json();
+  });
+  return res;
 }
 
 export interface PortfolioSummary {
@@ -96,42 +109,59 @@ export interface StrategyLog {
   created_at: string;
 }
 
-export const api = {
-  portfolio: {
-    summary: () => fetchAPI<PortfolioSummary>("/portfolio/summary"),
-    positions: (market?: string) =>
-      fetchAPI<{ positions: Position[]; total: number }>(
-        `/portfolio/positions${market ? `?market=${market}` : ""}`
-      ),
-    equityCurve: (days = 90) =>
-      fetchAPI<{ curve: EquityPoint[]; count: number }>(
-        `/portfolio/equity-curve?days=${days}`
-      ),
-  },
-  strategies: {
-    list: () => fetchAPI<{ strategies: Strategy[] }>("/strategies"),
-    toggle: (id: number, active: boolean) =>
-      fetchAPI(`/strategies/${id}/toggle`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_active: active }),
-      }),
-    ranking: (period = "month") =>
-      fetchAPI<{ rankings: Strategy[]; period: string }>(
-        `/strategies/ranking?period=${period}`
-      ),
-    logs: (strategyId?: number, limit = 100) =>
-      fetchAPI<{ logs: StrategyLog[]; count: number }>(
-        `/strategies/logs?limit=${limit}${strategyId ? `&strategy_id=${strategyId}` : ""}`
-      ),
-  },
-  trades: {
-    list: (limit = 100, offset = 0) =>
-      fetchAPI<{ trades: Trade[]; total: number }>(
-        `/trades?limit=${limit}&offset=${offset}`
-      ),
-  },
-  market: {
-    status: () => fetchAPI<MarketStatus>("/market/status"),
-  },
-};
+export function createApiClient(authToken?: string) {
+  const fetchWithAuth = <T>(path: string, init?: RequestInit): Promise<T> => {
+    const headers: Record<string, string> = {
+      ...(init?.headers as Record<string, string> || {}),
+    };
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+    return fetch(`${API_BASE}${path}`, { ...init, headers }).then(r => {
+      if (!r.ok) throw new Error(`API Error: ${r.status}`);
+      return r.json();
+    });
+  };
+
+  return {
+    portfolio: {
+      summary: () => fetchWithAuth<PortfolioSummary>("/portfolio/summary"),
+      positions: (market?: string) =>
+        fetchWithAuth<{ positions: Position[]; total: number }>(
+          `/portfolio/positions${market ? `?market=${market}` : ""}`
+        ),
+      equityCurve: (days = 90) =>
+        fetchWithAuth<{ curve: EquityPoint[]; count: number }>(
+          `/portfolio/equity-curve?days=${days}`
+        ),
+    },
+    strategies: {
+      list: () => fetchWithAuth<{ strategies: Strategy[] }>("/strategies"),
+      toggle: (id: number, active: boolean) =>
+        fetchWithAuth(`/strategies/${id}/toggle`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_active: active }),
+        }),
+      ranking: (period = "month") =>
+        fetchWithAuth<{ rankings: Strategy[]; period: string }>(
+          `/strategies/ranking?period=${period}`
+        ),
+      logs: (strategyId?: number, limit = 100) =>
+        fetchWithAuth<{ logs: StrategyLog[]; count: number }>(
+          `/strategies/logs?limit=${limit}${strategyId ? `&strategy_id=${strategyId}` : ""}`
+        ),
+    },
+    trades: {
+      list: (limit = 100, offset = 0) =>
+        fetchWithAuth<{ trades: Trade[]; total: number }>(
+          `/trades?limit=${limit}&offset=${offset}`
+        ),
+    },
+    market: {
+      status: () => fetchWithAuth<MarketStatus>("/market/status"),
+    },
+  };
+}
+
+export const api = createApiClient();

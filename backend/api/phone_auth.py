@@ -1,6 +1,5 @@
 """手机号注册/登录 API"""
 import json
-import time
 import uuid
 from typing import Optional
 
@@ -11,11 +10,10 @@ from loguru import logger
 from database import get_db
 from auth import hash_password, verify_password
 from api.wechat_auth import _create_token, verify_token
+from services.sms import send_sms, verify_code
 import config
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-_sms_codes: dict[str, tuple[str, float]] = {}
 
 
 class SendSMSRequest(BaseModel):
@@ -36,34 +34,26 @@ class PhoneLoginRequest(BaseModel):
 
 
 @router.post("/send-sms")
-async def send_sms(req: SendSMSRequest):
-    """发送验证码（测试模式返回固定验证码123456）"""
+async def send_sms_api(req: SendSMSRequest):
+    """发送验证码短信"""
     if not req.phone or len(req.phone) != 11:
         raise HTTPException(status_code=400, detail="手机号格式错误")
 
-    # 测试模式：固定验证码
+    result = await send_sms(req.phone)
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result.get("detail", "发送失败"))
+
+    resp = {"success": True, "expire_in": result["expire_in"]}
     if config.SMS_PROVIDER == "mock":
-        code = "123456"
-    else:
-        # 生产模式：生成随机验证码
-        code = str(uuid.uuid4().int)[:6]
-        # TODO: 调用短信服务商API发送验证码
-        logger.info(f"[短信] 发送验证码到 {req.phone}: {code}")
-
-    # 存储验证码（5分钟有效）
-    _sms_codes[req.phone] = (code, time.time() + 300)
-
-    return {"success": True, "expire_in": 300, "test_code": code if config.SMS_PROVIDER == "mock" else None}
+        resp["test_code"] = "123456"
+    return resp
 
 
 @router.post("/register-phone")
 async def register_phone(req: PhoneRegisterRequest):
     """手机号注册"""
-    stored = _sms_codes.get(req.phone)
-    if not stored or stored[1] < time.time():
-        raise HTTPException(status_code=400, detail="验证码已过期")
-    if stored[0] != req.code:
-        raise HTTPException(status_code=400, detail="验证码错误")
+    if not verify_code(req.phone, req.code):
+        raise HTTPException(status_code=400, detail="验证码错误或已过期")
 
     db = await get_db()
     try:
@@ -83,8 +73,6 @@ async def register_phone(req: PhoneRegisterRequest):
 
         async with db.execute("SELECT id FROM users WHERE phone=?", (req.phone,)) as cur:
             user = await cur.fetchone()
-
-        del _sms_codes[req.phone]
 
         token = _create_token(user[0], f"phone_{req.phone}")
 
@@ -122,12 +110,8 @@ async def login_phone(req: PhoneLoginRequest):
             if not password_hash or not verify_password(req.password, password_hash):
                 raise HTTPException(status_code=400, detail="密码错误")
         elif req.code:
-            stored = _sms_codes.get(req.phone)
-            if not stored or stored[1] < time.time():
-                raise HTTPException(status_code=400, detail="验证码已过期")
-            if stored[0] != req.code:
-                raise HTTPException(status_code=400, detail="验证码错误")
-            del _sms_codes[req.phone]
+            if not verify_code(req.phone, req.code):
+                raise HTTPException(status_code=400, detail="验证码错误或已过期")
 
         await db.execute(
             "UPDATE users SET last_login_at = datetime('now') WHERE id=?",
@@ -156,11 +140,8 @@ async def bind_phone(phone: str, code: str, authorization: Optional[str] = None)
     if not payload:
         raise HTTPException(status_code=401, detail="未登录")
 
-    stored = _sms_codes.get(phone)
-    if not stored or stored[1] < time.time():
-        raise HTTPException(status_code=400, detail="验证码已过期")
-    if stored[0] != code:
-        raise HTTPException(status_code=400, detail="验证码错误")
+    if not verify_code(phone, code):
+        raise HTTPException(status_code=400, detail="验证码错误或已过期")
 
     db = await get_db()
     try:
@@ -173,8 +154,6 @@ async def bind_phone(phone: str, code: str, authorization: Optional[str] = None)
             (phone, payload["user_id"])
         )
         await db.commit()
-
-        del _sms_codes[phone]
 
         return {"success": True}
     finally:

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from loguru import logger
 
@@ -119,35 +120,52 @@ async def confirm_test_order(authorization: Optional[str] = Header(None)):
 
 @router.post("/notify")
 async def pay_notify(request: Request):
-    """微信支付回调"""
-    body = await request.body()
-    data = verify_notify(body.decode())
+    """微信支付 APIv3 回调（JSON + 应答 JSON）"""
+    raw = await request.body()
+    text = raw.decode("utf-8")
+    hdrs = {k.lower(): v for k, v in request.headers.items()}
+    data = await verify_notify(text, hdrs)
     if not data:
-        return {"return_code": "FAIL", "return_msg": "签名验证失败"}
+        return JSONResponse(
+            status_code=401,
+            content={"code": "FAIL", "message": "验签或解密失败"},
+        )
 
     if data.get("result_code") != "SUCCESS":
-        return {"return_code": "FAIL", "return_msg": "支付失败"}
+        return JSONResponse(
+            status_code=400,
+            content={"code": "FAIL", "message": "支付未成功"},
+        )
 
     order_no = data.get("out_trade_no")
     trade_no = data.get("transaction_id")
 
     db = await get_db()
     try:
-        async with db.execute("SELECT id, user_id, plan FROM orders WHERE order_no=?", (order_no,)) as cur:
+        async with db.execute(
+            "SELECT id, user_id, plan, status FROM orders WHERE order_no=?",
+            (order_no,),
+        ) as cur:
             order = await cur.fetchone()
         if not order or order[3] == "paid":
-            return {"return_code": "SUCCESS", "return_msg": "OK"}
+            return JSONResponse(content={"code": "SUCCESS", "message": "成功"})
 
         plan_info = PLANS.get(order[2], PLANS["monthly"])
         expire = datetime.now() + timedelta(days=plan_info["days"])
 
-        await db.execute("UPDATE orders SET status='paid', paid_at=datetime('now'), trade_no=? WHERE id=?", (trade_no, order[0]))
-        await db.execute("UPDATE users SET is_member=1, member_expire_at=? WHERE id=?", (expire.strftime("%Y-%m-%d %H:%M:%S"), order[1]))
+        await db.execute(
+            "UPDATE orders SET status='paid', paid_at=datetime('now'), trade_no=? WHERE id=?",
+            (trade_no, order[0]),
+        )
+        await db.execute(
+            "UPDATE users SET is_member=1, member_expire_at=? WHERE id=?",
+            (expire.strftime("%Y-%m-%d %H:%M:%S"), order[1]),
+        )
         await db.commit()
     finally:
         await db.close()
 
-    return {"return_code": "SUCCESS", "return_msg": "OK"}
+    return JSONResponse(content={"code": "SUCCESS", "message": "成功"})
 
 
 @router.get("/orders")

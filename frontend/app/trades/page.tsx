@@ -1,4 +1,7 @@
-import { api } from "@/lib/api-client";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import Link from "next/link";
+import { createApiClient } from "@/lib/api-client";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 30;
@@ -14,6 +17,38 @@ function sign(n: number) {
 }
 
 export default async function TradesPage() {
+  const cookieStore = await cookies();
+  const isLoggedIn = cookieStore.get("is_member")?.value !== undefined || cookieStore.get("is_admin")?.value !== undefined;
+  const isMember = cookieStore.get("is_member")?.value === "true" || cookieStore.get("is_admin")?.value === "true";
+
+  if (!isLoggedIn) {
+    redirect("/auth/login?redirect=/trades");
+  }
+
+  if (!isMember) {
+    return (
+      <div className="space-y-5">
+        <div className="glass-card p-6 -mx-4 -mt-2 md:mx-0 md:mt-0">
+          <h1 className="text-xl font-bold text-white mb-1">交易记录</h1>
+        </div>
+        <div className="glass-card p-8 text-center glow-blue">
+          <div className="text-lg font-semibold text-white mb-2">会员专属内容</div>
+          <div className="text-sm text-white/50 mb-6">完整交易记录为会员专属功能</div>
+          <div className="flex gap-4 justify-center">
+            <a href="/membership" className="btn-primary inline-block">
+              立即升级
+            </a>
+            <Link href="/" className="inline-block px-6 py-2.5 rounded-lg border border-white/20 text-white/60 hover:text-white hover:border-white/40 transition-colors">
+              返回首页
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const authToken = cookieStore.get("auth_token")?.value;
+  const api = createApiClient(authToken);
   const data = await api.trades.list(100).catch(() => ({ trades: [] as any[], total: 0 }));
 
   return (

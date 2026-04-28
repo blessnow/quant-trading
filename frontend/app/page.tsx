@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { api } from "@/lib/api-client";
+import { createApiClient } from "@/lib/api-client";
 import { EquityChart } from "./components/EquityChart";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +20,9 @@ function sign(n: number) {
 export default async function Dashboard() {
   const cookieStore = await cookies();
   const isMember = cookieStore.get("is_member")?.value === "true";
+
+  const authToken = cookieStore.get("auth_token")?.value;
+  const api = createApiClient(authToken);
 
   const [summary, positions, trades, marketStatus, equityCurve, strategies] = await Promise.all([
     api.portfolio.summary().catch(() => null),

@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { StrategyEquityChart } from "@/app/components/StrategyEquityChart";
 import { TradesList, PositionsList } from "@/app/components/LoadMoreList";
@@ -26,13 +27,18 @@ const STRATEGY_META: Record<string, { desc: string; schedule: string }> = {
   YuGeValue: { desc: "价值投资，长期持有", schedule: "每日 09:00 CST" },
 };
 
-async function fetchData(strategyId: number, backendUrl: string) {
+async function fetchData(strategyId: number, backendUrl: string, authToken?: string) {
+  const headers: Record<string, string> = {};
+  if (authToken) {
+    headers["Authorization"] = `Bearer ${authToken}`;
+  }
+
   const [strategy, equityCurve, positions, trades, logs] = await Promise.all([
-    fetch(`${backendUrl}/api/strategies/${strategyId}`, { cache: "no-store" }).then(r => r.json()).catch(() => null),
-    fetch(`${backendUrl}/api/strategies/${strategyId}/equity-curve?days=90`, { cache: "no-store" }).then(r => r.json()).catch(() => ({ curve: [] })),
-    fetch(`${backendUrl}/api/strategies/${strategyId}/positions`, { cache: "no-store" }).then(r => r.json()).catch(() => ({ positions: [] })),
-    fetch(`${backendUrl}/api/strategies/${strategyId}/trades?limit=100`, { cache: "no-store" }).then(r => r.json()).catch(() => ({ trades: [] })),
-    fetch(`${backendUrl}/api/strategies/logs?strategy_id=${strategyId}&limit=50`, { cache: "no-store" }).then(r => r.json()).catch(() => ({ logs: [] })),
+    fetch(`${backendUrl}/api/strategies/${strategyId}`, { cache: "no-store", headers }).then(r => r.json()).catch(() => null),
+    fetch(`${backendUrl}/api/strategies/${strategyId}/equity-curve?days=90`, { cache: "no-store", headers }).then(r => r.json()).catch(() => ({ curve: [] })),
+    fetch(`${backendUrl}/api/strategies/${strategyId}/positions`, { cache: "no-store", headers }).then(r => r.json()).catch(() => ({ positions: [] })),
+    fetch(`${backendUrl}/api/strategies/${strategyId}/trades?limit=100`, { cache: "no-store", headers }).then(r => r.json()).catch(() => ({ trades: [] })),
+    fetch(`${backendUrl}/api/strategies/logs?strategy_id=${strategyId}&limit=50`, { cache: "no-store", headers }).then(r => r.json()).catch(() => ({ logs: [] })),
   ]);
   return { strategy, equityCurve, positions, trades, logs };
 }
@@ -40,8 +46,40 @@ async function fetchData(strategyId: number, backendUrl: string) {
 export default async function StrategyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const strategyId = parseInt(id);
+
+  const cookieStore = await cookies();
+  const isLoggedIn = cookieStore.get("is_member")?.value !== undefined || cookieStore.get("is_admin")?.value !== undefined;
+  const isMember = cookieStore.get("is_member")?.value === "true" || cookieStore.get("is_admin")?.value === "true";
+
+  if (!isLoggedIn) {
+    redirect("/auth/login?redirect=/strategies/" + id);
+  }
+
+  if (!isMember) {
+    return (
+      <div className="space-y-5">
+        <Link href="/strategies" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700">
+          ← 返回策略列表
+        </Link>
+        <div className="glass-card p-8 text-center glow-blue">
+          <div className="text-lg font-semibold text-white mb-2">会员专属内容</div>
+          <div className="text-sm text-white/50 mb-6">策略详情、持仓、交易记录等为会员专属功能</div>
+          <div className="flex gap-4 justify-center">
+            <a href="/membership" className="btn-primary inline-block">
+              立即升级
+            </a>
+            <Link href="/strategies" className="inline-block px-6 py-2.5 rounded-lg border border-white/20 text-white/60 hover:text-white hover:border-white/40 transition-colors">
+              返回列表
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
-  const { strategy, equityCurve, positions, trades, logs } = await fetchData(strategyId, backendUrl);
+  const authToken = cookieStore.get("auth_token")?.value;
+  const { strategy, equityCurve, positions, trades, logs } = await fetchData(strategyId, backendUrl, authToken);
 
   if (!strategy || strategy.error) {
     return (

@@ -8,8 +8,8 @@ export const metadata = { title: "QuantTrader", description: "A股+美股高频�
 
 const navItems = [
   { href: "/", label: "看板", icon: "📊" },
-  { href: "/strategies", label: "策略", icon: "⚡" },
-  { href: "/trades", label: "交易", icon: "📈" },
+  { href: "/strategies", label: "策略", icon: "⚡", requireLogin: true },
+  { href: "/trades", label: "交易", icon: "📈", requireLogin: true },
   { href: "/chat", label: "问财", icon: "💬", requireLogin: true },
   { href: "/monitor", label: "监控", icon: "📡", requireAdmin: true },
   { href: "/settings/notifications", label: "设置", icon: "⚙️", requireLogin: true },

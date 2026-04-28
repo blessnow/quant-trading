@@ -8,6 +8,8 @@ import { sendSMS, loginPhone } from "@/lib/auth-api";
 function LoginForm() {
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginMode, setLoginMode] = useState<"code" | "password">("password");
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -45,8 +47,16 @@ function LoginForm() {
   };
 
   const handleLogin = async () => {
-    if (!phone || !code) {
-      setError("请填写完整信息");
+    if (!phone || phone.length !== 11) {
+      setError("请输入正确的手机号");
+      return;
+    }
+    if (loginMode === "code" && !code) {
+      setError("请输入验证码");
+      return;
+    }
+    if (loginMode === "password" && !password) {
+      setError("请输入密码");
       return;
     }
 
@@ -54,7 +64,7 @@ function LoginForm() {
     setError("");
 
     try {
-      const res = await loginPhone(phone, code);
+      const res = await loginPhone(phone, loginMode === "code" ? code : undefined, loginMode === "password" ? password : undefined);
       if (res.token) {
         login(res.token, {
           id: res.user_id,
@@ -78,7 +88,22 @@ function LoginForm() {
   return (
     <div className="min-h-screen bg-[#0f0f1a] flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-[#1a1a2e] rounded-2xl p-8 shadow-xl">
-        <h1 className="text-2xl font-bold text-white text-center mb-8">登录 QuantTrader</h1>
+        <h1 className="text-2xl font-bold text-white text-center mb-6">登录 QuantTrader</h1>
+
+        <div className="flex bg-[#252542] rounded-lg p-1 mb-6">
+          <button
+            onClick={() => { setLoginMode("password"); setError(""); }}
+            className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${loginMode === "password" ? "bg-amber-500 text-amber-900" : "text-gray-400 hover:text-white"}`}
+          >
+            密码登录
+          </button>
+          <button
+            onClick={() => { setLoginMode("code"); setError(""); }}
+            className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${loginMode === "code" ? "bg-amber-500 text-amber-900" : "text-gray-400 hover:text-white"}`}
+          >
+            验证码登录
+          </button>
+        </div>
 
         <div className="space-y-4">
           <div>
@@ -92,26 +117,39 @@ function LoginForm() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">验证码</label>
-            <div className="flex gap-3">
+          {loginMode === "password" ? (
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">密码</label>
               <input
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="请输入验证码"
-                className="flex-1 px-4 py-3 bg-[#252542] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="请输入密码"
+                className="w-full px-4 py-3 bg-[#252542] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
               />
-              <button
-                onClick={handleSendSMS}
-                disabled={countdown > 0}
-                className="px-4 py-3 bg-[#252542] border border-gray-700 rounded-lg text-gray-300 hover:border-amber-500 hover:text-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                {countdown > 0 ? `${countdown}s` : "发送验证码"}
-              </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">测试模式验证码: 123456</p>
-          </div>
+          ) : (
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">验证码</label>
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="请输入验证码"
+                  className="flex-1 px-4 py-3 bg-[#252542] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  onClick={handleSendSMS}
+                  disabled={countdown > 0}
+                  className="px-4 py-3 bg-[#252542] border border-gray-700 rounded-lg text-gray-300 hover:border-amber-500 hover:text-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                >
+                  {countdown > 0 ? `${countdown}s` : "发送验证码"}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">测试模式验证码: 123456</p>
+            </div>
+          )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 

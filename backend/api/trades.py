@@ -1,9 +1,30 @@
 """交易记录 API"""
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException
+from typing import Optional
 
 from database import get_db
+from api.wechat_auth import verify_token
 
 router = APIRouter(prefix="/api/trades", tags=["trades"])
+
+
+async def require_member(authorization: Optional[str] = None):
+    payload = verify_token(authorization)
+    if not payload:
+        raise HTTPException(status_code=401, detail="未登录")
+    db = await get_db()
+    try:
+        async with db.execute(
+            "SELECT is_member, is_admin FROM users WHERE id=?", (payload["user_id"],)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=401, detail="用户不存在")
+        if not row[0] and not row[1]:
+            raise HTTPException(status_code=403, detail="需要会员权限")
+        return payload
+    finally:
+        await db.close()
 
 
 @router.get("")
@@ -13,7 +34,9 @@ async def list_trades(
     side: str = None,
     limit: int = 100,
     offset: int = 0,
+    authorization: Optional[str] = Header(None),
 ):
+    await require_member(authorization)
     db = await get_db()
     try:
         query = """

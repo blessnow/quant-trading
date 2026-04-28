@@ -226,31 +226,47 @@ async def _register_strategies_to_db():
 
 
 async def _create_test_users():
-    """创建测试用户：admin 和 test"""
+    """创建测试用户：admin / 会员 / 非会员"""
     from database import get_db
     import config
     from auth import hash_password
 
     db = await get_db()
     try:
-        admin_password = hash_password("admin123")
+        pw = hash_password("123456")
+
         await db.execute(
             """INSERT OR IGNORE INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
                VALUES (?, ?, ?, ?, 'phone', 1, 1)""",
-            ("phone_admin", "13800000001", admin_password, "管理员")
+            ("phone_admin", "10000000001", pw, "管理员")
+        )
+        await db.execute(
+            "UPDATE users SET is_member=1, is_admin=1 WHERE phone='10000000001'"
         )
 
-        test_password = hash_password("test123")
+        await db.execute(
+            """INSERT OR IGNORE INTO users 
+               (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
+               VALUES (?, ?, ?, ?, 'phone', 1, 0)""",
+            ("phone_member", "10000000002", pw, "会员用户")
+        )
+        await db.execute(
+            "UPDATE users SET is_member=1, is_admin=0 WHERE phone='10000000002'"
+        )
+
         await db.execute(
             """INSERT OR IGNORE INTO users 
                (openid, phone, password_hash, nickname, login_type, is_member, is_admin) 
                VALUES (?, ?, ?, ?, 'phone', 0, 0)""",
-            ("phone_test", "13800000002", test_password, "测试用户")
+            ("phone_guest", "10000000003", pw, "普通用户")
+        )
+        await db.execute(
+            "UPDATE users SET is_member=0, is_admin=0 WHERE phone='10000000003'"
         )
 
         await db.commit()
-        logger.info("[启动] 测试用户已创建: admin(13800000001) / test(13800000002)")
+        logger.info("[启动] 测试用户已创建: admin(10000000001) / member(10000000002) / guest(10000000003)")
     finally:
         await db.close()
 

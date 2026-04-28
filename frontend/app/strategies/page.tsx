@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import Link from "next/link";
-import { api } from "@/lib/api-client";
+import { createApiClient } from "@/lib/api-client";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 60;
@@ -27,13 +28,21 @@ const STRATEGY_META: Record<string, { desc: string; schedule: string }> = {
 export default async function StrategiesPage() {
   const cookieStore = await cookies();
   const isLoggedIn = cookieStore.get("is_member")?.value !== undefined || cookieStore.get("is_admin")?.value !== undefined;
+  const isMember = cookieStore.get("is_member")?.value === "true" || cookieStore.get("is_admin")?.value === "true";
+
+  if (!isLoggedIn) {
+    redirect("/auth/login?redirect=/strategies");
+  }
+
+  const authToken = cookieStore.get("auth_token")?.value;
+  const api = createApiClient(authToken);
 
   const [strategies, ranking, trades, positions, logs] = await Promise.all([
     api.strategies.list().catch(() => ({ strategies: [] as any[] })),
     api.strategies.ranking().catch(() => ({ rankings: [] as any[], period: "month" })),
-    isLoggedIn ? api.trades.list(50).catch(() => ({ trades: [] as any[], total: 0 })) : Promise.resolve({ trades: [] as any[], total: 0 }),
-    isLoggedIn ? api.portfolio.positions().catch(() => ({ positions: [] as any[], total: 0 })) : Promise.resolve({ positions: [] as any[], total: 0 }),
-    isLoggedIn ? api.strategies.logs(undefined, 50).catch(() => ({ logs: [] as any[], count: 0 })) : Promise.resolve({ logs: [] as any[], count: 0 }),
+    isMember ? api.trades.list(50).catch(() => ({ trades: [] as any[], total: 0 })) : Promise.resolve({ trades: [] as any[], total: 0 }),
+    isMember ? api.portfolio.positions().catch(() => ({ positions: [] as any[], total: 0 })) : Promise.resolve({ positions: [] as any[], total: 0 }),
+    isMember ? api.strategies.logs(undefined, 50).catch(() => ({ logs: [] as any[], count: 0 })) : Promise.resolve({ logs: [] as any[], count: 0 }),
   ]);
 
   return (
@@ -45,12 +54,12 @@ export default async function StrategiesPage() {
         <p className="text-white/40 text-sm">{strategies.strategies.length} 个策略运行中 · 排行榜</p>
       </div>
 
-      {!isLoggedIn && (
+      {!isMember && (
         <div className="glass-card p-8 text-center glow-blue">
-          <div className="text-lg font-semibold text-white mb-2">登录查看完整策略数据</div>
-          <div className="text-sm text-white/50 mb-6">持仓详情、交易记录、执行日志等需要登录后查看</div>
-          <a href="/auth/login" className="btn-primary inline-block">
-            立即登录
+          <div className="text-lg font-semibold text-white mb-2">升级会员查看完整策略数据</div>
+          <div className="text-sm text-white/50 mb-6">持仓详情、交易记录、执行日志等需要升级会员后查看</div>
+          <a href="/membership" className="btn-primary inline-block">
+            立即升级
           </a>
         </div>
       )}
@@ -61,7 +70,7 @@ export default async function StrategiesPage() {
           <h2 className="text-lg font-bold text-[#1a1a2e] mb-4">策略排行榜</h2>
           <div className="space-y-3">
             {ranking.rankings.map((r: any, i: number) => (
-              <Link key={r.strategy_id} href={`/strategies/${r.strategy_id}`} className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 hover:bg-gray-100 transition-colors">
+              <Link key={r.strategy_id} href={isMember ? `/strategies/${r.strategy_id}` : "/membership"} className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 hover:bg-gray-100 transition-colors">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white ${i === 0 ? "bg-gradient-to-br from-amber-400 to-amber-500" : i === 1 ? "bg-gradient-to-br from-gray-300 to-gray-400" : i === 2 ? "bg-gradient-to-br from-amber-600 to-amber-700" : "bg-gray-200 text-gray-500"}`}>
                   {i + 1}
                 </div>
@@ -81,8 +90,8 @@ export default async function StrategiesPage() {
         </div>
       )}
 
-      {/* 策略详情卡片 - 仅登录用户可见 */}
-      {isLoggedIn && (
+      {/* 策略详情卡片 - 仅会员可见 */}
+      {isMember && (
         <div className="space-y-4">
           {(strategies.strategies || []).map((s: any) => {
           const meta = STRATEGY_META[s.name] || { desc: s.description || "", schedule: "-" };
