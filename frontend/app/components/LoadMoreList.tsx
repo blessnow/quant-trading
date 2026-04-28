@@ -158,31 +158,31 @@ export function TradesList({ strategyId, initialTrades }: { strategyId: number; 
       title="历史交易"
       emptyText="暂无交易记录"
       renderItem={(t) => (
-        <div key={t.id} className="border-b border-gray-50 py-2.5 flex items-center text-sm">
-          <span className="text-xs text-gray-400 w-20 shrink-0">{t.executed_at?.slice(0, 16) || "-"}</span>
-          <span className="font-mono text-xs font-semibold text-[#1a1a2e] w-32 shrink-0">
+        <div key={t.id} className="border-b border-gray-50 py-2.5 grid grid-cols-7 gap-2 text-sm">
+          <span className="text-xs text-gray-400">{t.executed_at?.slice(0, 16) || "-"}</span>
+          <span className="font-mono text-xs font-semibold text-[#1a1a2e] truncate">
             {t.symbol} <span className="text-gray-400 font-normal">{t.name}</span>
           </span>
-          <span className={`text-xs px-2 py-0.5 rounded font-semibold w-16 shrink-0 ${t.side === "BUY" ? "bg-red-50 text-[#e05555]" : "bg-green-50 text-[#22c55e]"}`}>
+          <span className={`text-xs px-2 py-0.5 rounded font-semibold text-center ${t.side === "BUY" ? "bg-red-50 text-[#e05555]" : "bg-green-50 text-[#22c55e]"}`}>
             {t.side === "BUY" ? "买入" : "卖出"}
           </span>
-          <span className="text-right w-16 shrink-0">{t.price.toFixed(2)}</span>
-          <span className="text-right w-16 shrink-0">{t.shares}</span>
-          <span className="text-right text-gray-500 w-20 shrink-0">¥{fmt(t.notional || t.price * t.shares)}</span>
-          <span className={`text-right font-semibold flex-1 ${t.pnl != null ? pnlColor(t.pnl) : ""}`}>
+          <span className="text-right text-xs">{t.price.toFixed(2)}</span>
+          <span className="text-right text-xs">{t.shares}</span>
+          <span className="text-right text-xs text-gray-500">¥{fmt(t.notional || t.price * t.shares)}</span>
+          <span className={`text-right text-xs font-semibold ${t.pnl != null ? pnlColor(t.pnl) : ""}`}>
             {t.pnl != null ? `${sign(t.pnl)}¥${fmt(t.pnl)}` : "-"}
           </span>
         </div>
       )}
       header={
-        <div className="border-b border-gray-100 py-2 flex items-center text-xs text-gray-400 font-medium">
-          <span className="w-20 shrink-0">时间</span>
-          <span className="w-32 shrink-0">代码</span>
-          <span className="w-16 shrink-0">方向</span>
-          <span className="text-right w-16 shrink-0">价格</span>
-          <span className="text-right w-16 shrink-0">数量</span>
-          <span className="text-right w-20 shrink-0">金额</span>
-          <span className="text-right flex-1">盈亏</span>
+        <div className="border-b border-gray-100 py-2 grid grid-cols-7 gap-2 text-xs text-gray-400 font-medium">
+          <span>时间</span>
+          <span>代码</span>
+          <span className="text-center">方向</span>
+          <span className="text-right">价格</span>
+          <span className="text-right">数量</span>
+          <span className="text-right">金额</span>
+          <span className="text-right">盈亏</span>
         </div>
       }
     />
@@ -205,33 +205,33 @@ export function PositionsList({ strategyId, initialPositions }: { strategyId: nu
       title="当前持仓"
       emptyText="暂无持仓"
       renderItem={(p) => (
-        <div key={p.id} className="border-b border-gray-50 py-2.5 flex items-center text-sm">
-          <span className="font-mono text-xs font-semibold text-[#1a1a2e] w-20 shrink-0">{p.symbol}</span>
-          <span className="text-gray-700 w-20 shrink-0">{p.name}</span>
-          <span className="text-right w-14 shrink-0">{p.shares}</span>
-          <span className="text-right text-gray-500 w-14 shrink-0">{p.avg_cost.toFixed(2)}</span>
-          <span className="text-right w-14 shrink-0">{p.current_price.toFixed(2)}</span>
-          <span className="text-right w-16 shrink-0">¥{fmt(p.market_value || p.shares * p.current_price)}</span>
-          <span className={`text-right font-semibold w-14 shrink-0 ${pnlColor(p.unrealized_pnl)}`}>
+        <div key={p.id} className="border-b border-gray-50 py-2.5 grid grid-cols-9 gap-2 text-sm">
+          <span className="font-mono text-xs font-semibold text-[#1a1a2e]">{p.symbol}</span>
+          <span className="text-gray-700 text-xs truncate">{p.name}</span>
+          <span className="text-right text-xs">{p.shares}</span>
+          <span className="text-right text-xs text-gray-500">{p.avg_cost.toFixed(2)}</span>
+          <span className="text-right text-xs">{p.current_price.toFixed(2)}</span>
+          <span className="text-right text-xs">¥{fmt(p.market_value || p.shares * p.current_price)}</span>
+          <span className={`text-right text-xs font-semibold ${pnlColor(p.unrealized_pnl)}`}>
             {sign(p.unrealized_pnl)}¥{fmt(p.unrealized_pnl)}
           </span>
-          <span className={`text-right w-12 shrink-0 ${pnlColor(p.unrealized_pnl_pct)}`}>
+          <span className={`text-right text-xs ${pnlColor(p.unrealized_pnl_pct)}`}>
             {fmtPct(p.unrealized_pnl_pct)}
           </span>
-          <span className="text-right text-gray-400 w-10 shrink-0">{holdDays(p.buy_date)}天</span>
+          <span className="text-right text-xs text-gray-400">{holdDays(p.buy_date)}天</span>
         </div>
       )}
       header={
-        <div className="border-b border-gray-100 py-2 flex items-center text-xs text-gray-400 font-medium">
-          <span className="w-20 shrink-0">代码</span>
-          <span className="w-20 shrink-0">名称</span>
-          <span className="text-right w-14 shrink-0">持仓</span>
-          <span className="text-right w-14 shrink-0">成本</span>
-          <span className="text-right w-14 shrink-0">现价</span>
-          <span className="text-right w-16 shrink-0">市值</span>
-          <span className="text-right w-14 shrink-0">盈亏</span>
-          <span className="text-right w-12 shrink-0">收益率</span>
-          <span className="text-right w-10 shrink-0">天数</span>
+        <div className="border-b border-gray-100 py-2 grid grid-cols-9 gap-2 text-xs text-gray-400 font-medium">
+          <span>代码</span>
+          <span>名称</span>
+          <span className="text-right">持仓</span>
+          <span className="text-right">成本</span>
+          <span className="text-right">现价</span>
+          <span className="text-right">市值</span>
+          <span className="text-right">盈亏</span>
+          <span className="text-right">收益率</span>
+          <span className="text-right">天数</span>
         </div>
       }
     />
