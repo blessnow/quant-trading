@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { StrategyEquityChart } from "@/app/components/StrategyEquityChart";
+import { TradesList, PositionsList } from "@/app/components/LoadMoreList";
 
 export const dynamic = "force-dynamic";
 
@@ -104,84 +105,10 @@ export default async function StrategyDetailPage({ params }: { params: Promise<{
       </div>
 
       {/* 当前持仓 */}
-      <div className="bg-white rounded-2xl border border-black/5 p-5 shadow-sm">
-        <h2 className="text-lg font-bold text-[#1a1a2e] mb-4">当前持仓 <span className="text-sm font-normal text-gray-400">{positions.positions?.length || 0}只</span></h2>
-        {positions.positions && positions.positions.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-400 border-b border-gray-100">
-                  <th className="text-left py-2 font-medium">代码</th>
-                  <th className="text-left py-2 font-medium">名称</th>
-                  <th className="text-right py-2 font-medium">持仓</th>
-                  <th className="text-right py-2 font-medium">成本</th>
-                  <th className="text-right py-2 font-medium">现价</th>
-                  <th className="text-right py-2 font-medium">市值</th>
-                  <th className="text-right py-2 font-medium">浮盈</th>
-                </tr>
-              </thead>
-              <tbody>
-                {positions.positions.map((p: any) => (
-                  <tr key={p.id} className="border-b border-gray-50">
-                    <td className="py-2.5 font-mono text-xs font-semibold text-[#1a1a2e]">{p.symbol}</td>
-                    <td className="py-2.5 text-gray-700">{p.name}</td>
-                    <td className="py-2.5 text-right">{p.shares}</td>
-                    <td className="py-2.5 text-right text-gray-500">{p.avg_cost.toFixed(2)}</td>
-                    <td className="py-2.5 text-right">{p.current_price.toFixed(2)}</td>
-                    <td className="py-2.5 text-right">¥{fmt(p.market_value || p.shares * p.current_price)}</td>
-                    <td className={`py-2.5 text-right font-semibold ${pnlColor(p.unrealized_pnl)}`}>{sign(p.unrealized_pnl)}¥{fmt(p.unrealized_pnl)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center text-gray-400 py-8">暂无持仓</div>
-        )}
-      </div>
+      <PositionsList strategyId={strategyId} initialPositions={positions.positions || []} />
 
       {/* 历史交易 */}
-      <div className="bg-white rounded-2xl border border-black/5 p-5 shadow-sm">
-        <h2 className="text-lg font-bold text-[#1a1a2e] mb-4">历史交易 <span className="text-sm font-normal text-gray-400">{trades.trades?.length || 0}笔</span></h2>
-        {trades.trades && trades.trades.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-gray-400 border-b border-gray-100">
-                  <th className="text-left py-2 font-medium">时间</th>
-                  <th className="text-left py-2 font-medium">代码</th>
-                  <th className="text-left py-2 font-medium">方向</th>
-                  <th className="text-right py-2 font-medium">价格</th>
-                  <th className="text-right py-2 font-medium">数量</th>
-                  <th className="text-right py-2 font-medium">金额</th>
-                  <th className="text-right py-2 font-medium">盈亏</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trades.trades.map((t: any) => (
-                  <tr key={t.id} className="border-b border-gray-50">
-                    <td className="py-2.5 text-xs text-gray-400">{t.executed_at?.slice(0, 16) || "-"}</td>
-                    <td className="py-2.5 font-mono text-xs font-semibold text-[#1a1a2e]">{t.symbol} <span className="text-gray-400 font-normal">{t.name}</span></td>
-                    <td className="py-2.5">
-                      <span className={`text-xs px-2 py-0.5 rounded font-semibold ${t.side === "BUY" ? "bg-red-50 text-[#e05555]" : "bg-green-50 text-[#22c55e]"}`}>
-                        {t.side === "BUY" ? "买入" : "卖出"}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-right">{t.price.toFixed(2)}</td>
-                    <td className="py-2.5 text-right">{t.shares}</td>
-                    <td className="py-2.5 text-right text-gray-500">¥{fmt(t.notional || t.price * t.shares)}</td>
-                    <td className={`py-2.5 text-right font-semibold ${t.pnl != null ? pnlColor(t.pnl) : ""}`}>
-                      {t.pnl != null ? `${sign(t.pnl)}¥${fmt(t.pnl)}` : "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-center text-gray-400 py-8">暂无交易记录</div>
-        )}
-      </div>
+      <TradesList strategyId={strategyId} initialTrades={trades.trades || []} />
 
       {/* 执行日志 */}
       {logs.logs && logs.logs.length > 0 && (

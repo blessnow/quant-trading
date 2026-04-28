@@ -245,16 +245,22 @@ async def strategy_positions(strategy_id: int):
 
 
 @router.get("/{strategy_id}/trades")
-async def strategy_trades(strategy_id: int, limit: int = 100):
-    """策略历史交易"""
+async def strategy_trades(strategy_id: int, limit: int = 20, offset: int = 0):
+    """策略历史交易（支持分页）"""
     db = await get_db()
     try:
+        # 获取总数
+        async with db.execute("SELECT COUNT(*) FROM trades WHERE strategy_id=?", (strategy_id,)) as cur:
+            total = await cur.fetchone()
+            total = total[0] if total else 0
+
+        # 获取分页数据
         async with db.execute("""
             SELECT id, symbol, market, name, side, price, shares, notional,
                    commission, pnl, executed_at
             FROM trades WHERE strategy_id=?
-            ORDER BY id DESC LIMIT ?
-        """, (strategy_id, limit)) as cur:
+            ORDER BY id DESC LIMIT ? OFFSET ?
+        """, (strategy_id, limit, offset)) as cur:
             rows = await cur.fetchall()
 
         trades = []
@@ -264,6 +270,6 @@ async def strategy_trades(strategy_id: int, limit: int = 100):
                 "side": r[4], "price": r[5], "shares": r[6], "notional": r[7],
                 "commission": r[8], "pnl": r[9], "executed_at": r[10],
             })
-        return {"trades": trades, "count": len(trades)}
+        return {"trades": trades, "total": total, "has_more": offset + len(trades) < total}
     finally:
         await db.close()
