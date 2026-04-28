@@ -236,15 +236,9 @@ export default async function Dashboard() {
         <div className="glass-card p-8 text-center glow-blue">
           <div className="text-lg font-semibold text-white mb-2">升级会员查看完整数据</div>
           <div className="text-sm text-white/50 mb-6">持仓详情、交易记录、策略绩效等高级功能</div>
-          <form action={async () => {
-            "use server";
-            const { cookies } = await import("next/headers");
-            (await cookies()).set("is_member", "true", { path: "/", maxAge: 60 * 60 * 24 * 365 });
-          }}>
-            <button type="submit" className="btn-primary">
-              立即升级
-            </button>
-          </form>
+          <a href="/membership" className="btn-primary inline-block">
+            立即升级
+          </a>
         </div>
       )}
     </div>
