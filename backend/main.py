@@ -1,10 +1,18 @@
 """高频量化交易系统 — 主入口"""
 import asyncio
 import json
+import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 load_dotenv()
+
+# 确保data目录有__init__.py（Railway volume挂载会覆盖）
+data_dir = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(data_dir, exist_ok=True)
+init_file = os.path.join(data_dir, "__init__.py")
+if not os.path.exists(init_file):
+    open(init_file, "w").close()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
