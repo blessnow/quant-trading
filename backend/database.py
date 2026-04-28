@@ -32,7 +32,10 @@ class DatabasePool:
 
     async def release(self, conn: aiosqlite.Connection):
         """关闭连接"""
-        await conn.close()
+        try:
+            await conn.close()
+        except Exception:
+            pass
 
     async def close_all(self):
         logging.info("[数据库] 已关闭")
@@ -379,17 +382,5 @@ async def close_db():
 
 
 async def get_db():
-    """获取数据库连接（向后兼容）
-
-    旧代码: db = await get_db() / try / finally / await db.close()
-    新代码: async with get_db() as db: ...
-    两者都支持，close() 实际是释放回连接池。
-    """
-    conn = await db_pool.acquire()
-    original_close = conn.close
-
-    async def _release_instead_of_close():
-        await db_pool.release(conn)
-
-    conn.close = _release_instead_of_close
-    return conn
+    """获取数据库连接"""
+    return await db_pool.acquire()
