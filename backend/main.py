@@ -195,12 +195,18 @@ async def _register_strategies_to_db():
         for name, cls in all_strategies().items():
             defaults = cls.default_params()
             market = "A_SHARE" if "a_share" in cls.__module__ else "US_STOCK"
-            display_name = name.replace("_", " ").title()
+            display_name = name.replace("_", " ")
+            import re
+            display_name = re.sub(r'([A-Z])', r' \1', display_name).strip().title()
 
             await db.execute(
                 """INSERT OR IGNORE INTO strategies (name, display_name, market, description, params_json)
                    VALUES (?, ?, ?, ?, ?)""",
                 (name, display_name, market, "", json.dumps(defaults))
+            )
+            await db.execute(
+                "UPDATE strategies SET display_name=? WHERE name=?",
+                (display_name, name)
             )
         await db.commit()
 
