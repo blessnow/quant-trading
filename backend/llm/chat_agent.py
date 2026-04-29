@@ -136,6 +136,21 @@ class ChatAgent:
                     "required": ["code"]
                 }
             },
+            "get_batch_fundamentals": {
+                "name": "get_batch_fundamentals",
+                "description": "批量获取多只股票基本面（比逐个 get_stock_fundamentals 更高效）。多标的对比时优先用本工具。",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "codes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "6位股票代码列表，如 [\"601118\",\"600028\"]",
+                        }
+                    },
+                    "required": ["codes"],
+                },
+            },
             "get_pb_ratio": {
                 "name": "get_pb_ratio",
                 "description": "获取个股估值数据：当前价格、PB、PE、每股净资产。",
@@ -146,6 +161,21 @@ class ChatAgent:
                     },
                     "required": ["code"]
                 }
+            },
+            "get_batch_pb_ratio": {
+                "name": "get_batch_pb_ratio",
+                "description": "批量获取多只股票的 PB/PE/价格等估值数据，多标的对比时优先用本工具。",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "codes": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "6位股票代码列表",
+                        }
+                    },
+                    "required": ["codes"],
+                },
             },
             "get_commodity_prices": {
                 "name": "get_commodity_prices",

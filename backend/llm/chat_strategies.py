@@ -104,7 +104,15 @@ YU_GE_STRATEGY = ChatStrategy(
     color="#3b82f6",
     description="价值投资六步研究，专注资源周期股、低估值高安全边际",
     system_prompt_key="yu_ge",
-    tools=["search_web", "get_stock_fundamentals", "get_pb_ratio", "get_commodity_prices", "get_positions"],
+    tools=[
+        "search_web",
+        "get_batch_fundamentals",
+        "get_batch_pb_ratio",
+        "get_stock_fundamentals",
+        "get_pb_ratio",
+        "get_commodity_prices",
+        "get_positions",
+    ],
     prompts=YU_GE_PROMPTS,
 )
 
