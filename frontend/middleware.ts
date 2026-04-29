@@ -12,6 +12,10 @@ export function middleware(request: NextRequest) {
     if (pathname === "/api/chat/send") {
       return NextResponse.next();
     }
+    // 诊断：不走 rewrite（后端无此路径）
+    if (pathname === "/api/diag") {
+      return NextResponse.next();
+    }
     // POST/GET + 内网 rewrite 易挂死/502；改由 app/api/*/route.ts 代理
     if (pathname.startsWith("/api/auth") || pathname.startsWith("/api/wechat")) {
       return NextResponse.next();

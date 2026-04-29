@@ -1,9 +1,11 @@
 /**
  * 服务端直连 FastAPI（middleware rewrite、app/api/chat/send 代理）。
- * Railway：在前端服务配置 BACKEND_URL 为后端私网地址，例如
- *   http://<后端服务名>.railway.internal:8000
- * （middleware 已设 runtime=nodejs，否则 Edge 连不上私网，/api 转发会失败）
- * 或使用「变量引用」里生成的 RAILWAY_SERVICE_*_URL（须为内网，勿填 *.up.railway.app）。
+ * Railway：
+ * - 在前端服务配置 BACKEND_URL，请用控制台「后端服务 → Networking → Private」里复制的完整 URL，
+ *   或使用变量引用，使「主机名 + 端口」与后端实际监听的 PORT 一致。
+ * - 后端 `config.API_PORT` 使用环境变量 PORT（Railway 注入），往往**不是** 8000；不要手写
+ *   `...railway.internal:8000` 除非后端 PORT 确为 8000，否则易出现登录 504（代理等后端响应超时）。
+ * - 排查：浏览器打开同源 GET `/api/diag`，看 health_ms / login_post_ms。
  * 本地未配置时默认 http://127.0.0.1:8000。
  */
 export function serverBackendBase(): string {

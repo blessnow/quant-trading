@@ -1,4 +1,4 @@
 # 后端服务配置 — Root Directory 在 Railway 控制台设为 backend
 #
-# 建议：后端关闭 Public Networking；前端 BACKEND_URL=http://<后端>.railway.internal:8000
+# 建议：后端关闭 Public Networking；前端 BACKEND_URL 用控制台私网地址（端口=后端 PORT，勿默认 :8000）
 # 后端 BACKEND_PRIVATE_ONLY=true（微信回调等见 backend/.env.example）

@@ -88,7 +88,7 @@ async function proxy(request: Request, pathSegments: string[]) {
       aborted && request.signal.aborted
         ? "客户端已取消"
         : aborted
-          ? "连接后端超时，请稍后重试"
+          ? "连接后端超时（若约 55 秒：多为前端容器连后端失败；请核对 BACKEND_URL 端口与后端 PORT，并访问 /api/diag）"
           : "无法连接后端服务";
     return Response.json({ detail: msg }, { status: aborted ? 504 : 502 });
   }
