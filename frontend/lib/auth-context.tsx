@@ -40,9 +40,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchUser = async (t: string) => {
+    const ac = new AbortController();
+    const tid = setTimeout(() => ac.abort(), 25_000);
     try {
       const res = await fetch("/api/wechat/me", {
         headers: { Authorization: `Bearer ${t}` },
+        cache: "no-store",
+        signal: ac.signal,
       });
       if (res.ok) {
         const data = await res.json();
@@ -62,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       document.cookie = "auth_token=; path=/; max-age=0";
     } finally {
+      clearTimeout(tid);
       setLoading(false);
     }
   };
