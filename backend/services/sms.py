@@ -40,6 +40,20 @@ async def store_code(phone: str, code: str, ttl: int = 300) -> None:
 async def verify_code(phone: str, code: str) -> bool:
     from database import get_db
 
+    if (
+        config.SMS_FIXED_TEST_CODE
+        and code == config.SMS_FIXED_TEST_CODE
+        and phone in config.SMS_FIXED_TEST_PHONES
+    ):
+        logger.info(f"[短信] 固定测试验证码通过: {phone}")
+        db = await get_db()
+        try:
+            await db.execute("DELETE FROM sms_verification_codes WHERE phone=?", (phone,))
+            await db.commit()
+        finally:
+            await db.close()
+        return True
+
     db = await get_db()
     try:
         async with db.execute(

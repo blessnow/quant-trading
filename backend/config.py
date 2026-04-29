@@ -95,6 +95,29 @@ SMS_SECRET_KEY = os.environ.get("SMS_SECRET_KEY", "")
 SMS_SIGN_NAME = os.environ.get("SMS_SIGN_NAME", "QuantTrader")
 SMS_TEMPLATE_CODE = os.environ.get("SMS_TEMPLATE_CODE", "")
 
+# 固定测试号：免真实短信，验证码为 SMS_FIXED_TEST_CODE（默认 123456）即通过。
+# SMS_FIXED_TEST_PHONES 未设置时，使用脚本/main 里创建的测试号；设为 none/off/- 可关闭。
+_sms_fixed = os.environ.get("SMS_FIXED_TEST_CODE", "123456").strip()
+SMS_FIXED_TEST_CODE: str | None = _sms_fixed if _sms_fixed else None
+_sms_fp = os.environ.get("SMS_FIXED_TEST_PHONES")
+if _sms_fp is None:
+    SMS_FIXED_TEST_PHONES = frozenset(
+        {
+            "13800000001",
+            "13800000002",
+            "13800138000",  # 文档中的管理员示例号
+            "10000000001",
+            "10000000002",
+            "10000000003",
+        }
+    )
+elif _sms_fp.strip().lower() in ("", "none", "off", "-"):
+    SMS_FIXED_TEST_PHONES = frozenset()
+else:
+    SMS_FIXED_TEST_PHONES = frozenset(
+        p.strip() for p in _sms_fp.split(",") if len(p.strip()) == 11
+    )
+
 # 二维码有效期（秒）
 LOGIN_QR_EXPIRE_SECONDS = 300
 PAY_QR_EXPIRE_SECONDS = 300
