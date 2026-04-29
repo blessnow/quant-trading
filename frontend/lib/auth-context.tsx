@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { useRouter } from "next/navigation";
 
 interface User {
   id: number;
@@ -24,6 +25,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,11 +55,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data);
         document.cookie = `is_member=${data.is_member ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
         document.cookie = `is_admin=${data.is_admin ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
+        router.refresh();
       } else {
         localStorage.removeItem("token");
         setToken(null);
         setUser(null);
         document.cookie = "auth_token=; path=/; max-age=0";
+        document.cookie = "is_member=; path=/; max-age=0";
+        document.cookie = "is_admin=; path=/; max-age=0";
+        router.refresh();
       }
     } catch (e) {
       console.error("获取用户信息失败", e);
@@ -65,6 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(null);
       setUser(null);
       document.cookie = "auth_token=; path=/; max-age=0";
+      document.cookie = "is_member=; path=/; max-age=0";
+      document.cookie = "is_admin=; path=/; max-age=0";
+      router.refresh();
     } finally {
       clearTimeout(tid);
       setLoading(false);
@@ -78,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     document.cookie = `auth_token=${newToken}; path=/; max-age=${60 * 60 * 24 * 365}`;
     document.cookie = `is_member=${newUser.is_member ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
     document.cookie = `is_admin=${newUser.is_admin ? "true" : "false"}; path=/; max-age=${60 * 60 * 24 * 365}`;
+    router.refresh();
   };
 
   const logout = () => {
@@ -87,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     document.cookie = "auth_token=; path=/; max-age=0";
     document.cookie = "is_member=; path=/; max-age=0";
     document.cookie = "is_admin=; path=/; max-age=0";
+    router.refresh();
   };
 
   const refreshUser = async () => {
