@@ -1,80 +1,25 @@
 import "./globals.css";
-import Link from "next/link";
-import { cookies } from "next/headers";
 import { AuthProvider } from "@/lib/auth-context";
 import { UserNav } from "@/app/components/UserNav";
+import { MainNavLinks } from "@/app/components/MainNavLinks";
 
 export const metadata = { title: "QuantTrader", description: "A股+美股高频量化交易系统" };
 
-const navItems = [
-  { href: "/", label: "看板", icon: "📊" },
-  { href: "/strategies", label: "策略", icon: "⚡", requireLogin: true },
-  { href: "/trades", label: "交易", icon: "📈", requireLogin: true },
-  { href: "/chat", label: "问财", icon: "💬", requireLogin: true },
-  { href: "/monitor", label: "监控", icon: "📡", requireAdmin: true },
-  { href: "/settings/notifications", label: "设置", icon: "⚙️", requireLogin: true },
-];
-
-async function NavLinks() {
-  const cookieStore = await cookies();
-  const isAdmin = cookieStore.get("is_admin")?.value === "true";
-  const isLoggedIn = cookieStore.get("is_member")?.value !== undefined || cookieStore.get("is_admin")?.value !== undefined;
-
-  return (
-    <div className="flex gap-1">
-      {navItems.map((item) => {
-        if (item.requireAdmin && !isAdmin) return null;
-        if (item.requireLogin && !isLoggedIn) return null;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="nav-link"
-          >
-            {item.label}
-          </Link>
-        );
-      })}
-    </div>
-  );
-}
-
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const cookieStore = await cookies();
-  const isAdmin = cookieStore.get("is_admin")?.value === "true";
-  const isLoggedIn = cookieStore.get("is_member")?.value !== undefined || cookieStore.get("is_admin")?.value !== undefined;
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh">
       <body>
         <AuthProvider>
-          {/* 导航栏 */}
           <nav className="sticky top-0 z-50 backdrop-blur-xl bg-[rgba(10,15,26,0.8)] border-b border-white/10">
             <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
               <div className="flex items-center gap-8">
-                {/* Logo */}
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
                     <span className="text-white font-bold text-sm">Q</span>
                   </div>
                   <span className="font-bold text-lg text-white tracking-tight">QuantTrader</span>
                 </div>
-                {/* 导航链接 */}
-                <div className="flex gap-1">
-                  {navItems.map((item) => {
-                    if (item.requireAdmin && !isAdmin) return null;
-                    if (item.requireLogin && !isLoggedIn) return null;
-                    return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className="nav-link"
-                      >
-                        {item.label}
-                      </Link>
-                    );
-                  })}
-                </div>
+                <MainNavLinks />
               </div>
               <div className="flex items-center gap-4">
                 <UserNav />
@@ -85,7 +30,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </div>
             </div>
           </nav>
-          {/* 主内容区 */}
           <main className="max-w-7xl mx-auto px-4 py-6">{children}</main>
         </AuthProvider>
       </body>
