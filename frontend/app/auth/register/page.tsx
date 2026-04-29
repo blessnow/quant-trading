@@ -111,7 +111,6 @@ export default function RegisterPage() {
                 {countdown > 0 ? `${countdown}s` : "发送验证码"}
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1">测试模式验证码: 123456</p>
           </div>
 
           <div>

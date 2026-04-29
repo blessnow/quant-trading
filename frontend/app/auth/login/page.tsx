@@ -149,12 +149,7 @@ function LoginForm() {
                   {countdown > 0 ? `${countdown}s` : "发送验证码"}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">测试模式验证码: 123456</p>
             </div>
-          )}
-
-          {loginMode === "password" && (
-            <p className="text-xs text-gray-500">测试管理员：10000000001 / 123456</p>
           )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
