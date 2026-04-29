@@ -7,18 +7,40 @@ export function authErrorMessage(
   return typeof d === "string" && d.length > 0 ? d : fallback;
 }
 
+const AUTH_FETCH_TIMEOUT_MS = 45_000;
+
 /** 始终走同源 `/api`，避免 NEXT_PUBLIC 在构建时被内联成 localhost 打进线上包 */
 async function fetchAuthJson(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  timeoutMs: number = AUTH_FETCH_TIMEOUT_MS
 ): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const merged: RequestInit = {
+    ...init,
+    signal: controller.signal,
+    cache: "no-store",
+  };
+
   let res: Response;
   try {
-    res = await fetch(path, init);
-  } catch {
-    return { detail: "网络异常，请检查网络或稍后重试" };
+    res = await fetch(path, merged);
+  } catch (e) {
+    clearTimeout(timer);
+    const aborted = e instanceof DOMException && e.name === "AbortError";
+    return {
+      detail: aborted ? "请求超时，请检查网络或稍后重试" : "网络异常，请检查网络或稍后重试",
+    };
   }
-  const text = await res.text();
+  clearTimeout(timer);
+
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    return { detail: res.ok ? "响应读取失败" : `服务暂时不可用（${res.status}）` };
+  }
   let data: Record<string, unknown> = {};
   try {
     data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
