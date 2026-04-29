@@ -45,9 +45,23 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "")
 
 # 服务配置
-API_HOST = os.environ.get("API_HOST", "0.0.0.0")
+# Railway 私网常见 IPv6；未在 Railway 时默认 0.0.0.0 便于本机
+_on_railway = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PRIVATE_DOMAIN"))
+_default_api_host = "::" if _on_railway else "0.0.0.0"
+API_HOST = os.environ.get("API_HOST", _default_api_host)
 API_PORT = int(os.environ.get("PORT", os.environ.get("API_PORT", "8000")))
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+
+# 为 true 时：非内网 Host 仅允许 BACKEND_PUBLIC_ALLOWED_PATHS（微信/扫码回调等）
+BACKEND_PRIVATE_ONLY = os.environ.get("BACKEND_PRIVATE_ONLY", "").lower() in ("1", "true", "yes")
+_extra_public = [
+    p.strip().rstrip("/") or "/"
+    for p in os.environ.get("BACKEND_PUBLIC_PATHS", "").split(",")
+    if p.strip()
+]
+BACKEND_PUBLIC_ALLOWED_PATHS = tuple(
+    sorted({"/api/pay/notify", "/api/auth/callback", *_extra_public})
+)
 
 # 微信小程序配置（测试号）
 WX_APPID = os.environ.get("WX_APPID", "wx_test_appid")

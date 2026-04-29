@@ -86,6 +86,9 @@ setup_rate_limit(app)
 
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from middleware_private import PrivateBackendAccessMiddleware
+
+
 class TimeoutMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         return await call_next(request)
@@ -108,6 +111,10 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+if config.BACKEND_PRIVATE_ONLY:
+    app.add_middleware(PrivateBackendAccessMiddleware)
+    logger.info("[启动] BACKEND_PRIVATE_ONLY=1：公网 Host 仅放行 %s", config.BACKEND_PUBLIC_ALLOWED_PATHS)
 
 app.include_router(portfolio_router)
 app.include_router(strategies_router)

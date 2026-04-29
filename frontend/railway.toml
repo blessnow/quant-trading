@@ -1,3 +1,7 @@
+# 在 Railway「前端」Variables 配置 BACKEND_URL 为后端私网，例如：
+#   http://<backend-service-name>.railway.internal:8000
+# 勿使用 *.up.railway.app 作为 BACKEND_URL。
+
 [build]
   builder = "DOCKERFILE"
 
