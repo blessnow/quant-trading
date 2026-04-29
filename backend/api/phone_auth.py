@@ -52,7 +52,7 @@ async def send_sms_api(req: SendSMSRequest):
 @router.post("/register-phone")
 async def register_phone(req: PhoneRegisterRequest):
     """手机号注册"""
-    if not verify_code(req.phone, req.code):
+    if not await verify_code(req.phone, req.code):
         raise HTTPException(status_code=400, detail="验证码错误或已过期")
 
     db = await get_db()
@@ -110,7 +110,7 @@ async def login_phone(req: PhoneLoginRequest):
             if not password_hash or not verify_password(req.password, password_hash):
                 raise HTTPException(status_code=400, detail="密码错误")
         elif req.code:
-            if not verify_code(req.phone, req.code):
+            if not await verify_code(req.phone, req.code):
                 raise HTTPException(status_code=400, detail="验证码错误或已过期")
 
         await db.execute(
@@ -140,7 +140,7 @@ async def bind_phone(phone: str, code: str, authorization: Optional[str] = None)
     if not payload:
         raise HTTPException(status_code=401, detail="未登录")
 
-    if not verify_code(phone, code):
+    if not await verify_code(phone, code):
         raise HTTPException(status_code=400, detail="验证码错误或已过期")
 
     db = await get_db()

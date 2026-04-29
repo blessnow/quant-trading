@@ -291,6 +291,12 @@ CREATE INDEX IF NOT EXISTS idx_strategy_logs_strategy_id ON strategy_logs(strate
 CREATE INDEX IF NOT EXISTS idx_strategy_logs_created_at ON strategy_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+
+CREATE TABLE IF NOT EXISTS sms_verification_codes (
+    phone       TEXT NOT NULL PRIMARY KEY,
+    code        TEXT NOT NULL,
+    expires_at  REAL NOT NULL
+);
 """
 
 async def init_db():

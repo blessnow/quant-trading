@@ -1,4 +1,9 @@
-"""短信发送服务 — 支持阿里云短信 / mock模式"""
+"""短信发送服务 — 支持阿里云短信 / mock模式
+
+验证码存 SQLite（sms_verification_codes），避免进程内存导致多 Worker / 多副本
+下发与校验命中不同实例时永远校验失败（密码登录不受影响）。
+多副本且各副本独立磁盘时仍需 Redis 等共享存储；单副本 + 共享 DB 文件即可。
+"""
 import json
 import random
 import time
@@ -8,29 +13,54 @@ from loguru import logger
 
 import config
 
-_code_store: dict[str, tuple[str, float]] = {}
-
 
 def generate_code() -> str:
     return f"{random.randint(0, 999999):06d}"
 
 
-def store_code(phone: str, code: str, ttl: int = 300) -> None:
-    _code_store[phone] = (code, time.time() + ttl)
+async def store_code(phone: str, code: str, ttl: int = 300) -> None:
+    from database import get_db
+
+    exp = time.time() + ttl
+    db = await get_db()
+    try:
+        await db.execute(
+            """INSERT INTO sms_verification_codes (phone, code, expires_at)
+               VALUES (?, ?, ?)
+               ON CONFLICT(phone) DO UPDATE SET
+                 code=excluded.code,
+                 expires_at=excluded.expires_at""",
+            (phone, code, exp),
+        )
+        await db.commit()
+    finally:
+        await db.close()
 
 
-def verify_code(phone: str, code: str) -> bool:
-    entry = _code_store.get(phone)
-    if not entry:
-        return False
-    stored_code, expires_at = entry
-    if time.time() > expires_at:
-        _code_store.pop(phone, None)
-        return False
-    if stored_code != code:
-        return False
-    _code_store.pop(phone, None)
-    return True
+async def verify_code(phone: str, code: str) -> bool:
+    from database import get_db
+
+    db = await get_db()
+    try:
+        async with db.execute(
+            "SELECT code, expires_at FROM sms_verification_codes WHERE phone=?",
+            (phone,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return False
+        stored, expires_at = row[0], float(row[1])
+        if time.time() > expires_at:
+            await db.execute("DELETE FROM sms_verification_codes WHERE phone=?", (phone,))
+            await db.commit()
+            return False
+        if stored != code:
+            return False
+        await db.execute("DELETE FROM sms_verification_codes WHERE phone=?", (phone,))
+        await db.commit()
+        return True
+    finally:
+        await db.close()
 
 
 async def send_sms(phone: str, code: Optional[str] = None) -> dict:
@@ -42,7 +72,7 @@ async def send_sms(phone: str, code: Optional[str] = None) -> dict:
     ttl = 300
 
     if config.SMS_PROVIDER == "mock":
-        store_code(phone, code, ttl)
+        await store_code(phone, code, ttl)
         logger.info(f"[短信-mock] {phone} -> {code}")
         return {"success": True, "expire_in": ttl}
 
@@ -81,7 +111,7 @@ async def _send_aliyun(phone: str, code: str, ttl: int) -> dict:
         resp = await client.send_sms_async(request)
 
         if resp.body.code == "OK":
-            store_code(phone, code, ttl)
+            await store_code(phone, code, ttl)
             logger.info(f"[短信-阿里云] 发送成功: {phone}")
             return {"success": True, "expire_in": ttl}
         else:
