@@ -94,12 +94,14 @@ function LoginForm() {
 
         <div className="flex bg-[#252542] rounded-lg p-1 mb-6">
           <button
+            type="button"
             onClick={() => { setLoginMode("password"); setError(""); }}
             className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${loginMode === "password" ? "bg-amber-500 text-amber-900" : "text-gray-400 hover:text-white"}`}
           >
             密码登录
           </button>
           <button
+            type="button"
             onClick={() => { setLoginMode("code"); setError(""); }}
             className={`flex-1 py-2 rounded-md text-sm font-medium transition-colors ${loginMode === "code" ? "bg-amber-500 text-amber-900" : "text-gray-400 hover:text-white"}`}
           >
@@ -107,11 +109,20 @@ function LoginForm() {
           </button>
         </div>
 
-        <div className="space-y-4">
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleLogin();
+          }}
+        >
           <div>
-            <label className="block text-sm text-gray-400 mb-1">手机号</label>
+            <label htmlFor="login-phone" className="block text-sm text-gray-400 mb-1">手机号</label>
             <input
+              id="login-phone"
               type="tel"
+              name="phone"
+              autoComplete="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
               placeholder="请输入手机号"
@@ -121,9 +132,12 @@ function LoginForm() {
 
           {loginMode === "password" ? (
             <div>
-              <label className="block text-sm text-gray-400 mb-1">密码</label>
+              <label htmlFor="login-password" className="block text-sm text-gray-400 mb-1">密码</label>
               <input
+                id="login-password"
                 type="password"
+                name="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="请输入密码"
@@ -132,16 +146,21 @@ function LoginForm() {
             </div>
           ) : (
             <div>
-              <label className="block text-sm text-gray-400 mb-1">验证码</label>
+              <label htmlFor="login-code" className="block text-sm text-gray-400 mb-1">验证码</label>
               <div className="flex gap-3">
                 <input
+                  id="login-code"
                   type="text"
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   value={code}
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   placeholder="请输入验证码"
                   className="flex-1 px-4 py-3 bg-[#252542] border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
                 />
                 <button
+                  type="button"
                   onClick={handleSendSMS}
                   disabled={countdown > 0}
                   className="px-4 py-3 bg-[#252542] border border-gray-700 rounded-lg text-gray-300 hover:border-amber-500 hover:text-amber-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
@@ -155,13 +174,13 @@ function LoginForm() {
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
           <button
-            onClick={handleLogin}
+            type="submit"
             disabled={loading}
             className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-400 text-amber-900 font-bold rounded-lg hover:from-amber-400 hover:to-amber-300 transition-all disabled:opacity-50"
           >
             {loading ? "登录中..." : "登录"}
           </button>
-        </div>
+        </form>
 
         <div className="mt-6 text-center">
           <p className="text-gray-500 text-sm">
