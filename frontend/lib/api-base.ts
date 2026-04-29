@@ -2,6 +2,7 @@
  * 服务端直连 FastAPI（middleware rewrite、app/api/chat/send 代理）。
  * Railway：在前端服务配置 BACKEND_URL 为后端私网地址，例如
  *   http://<后端服务名>.railway.internal:8000
+ * （middleware 已设 runtime=nodejs，否则 Edge 连不上私网，/api 转发会失败）
  * 或使用「变量引用」里生成的 RAILWAY_SERVICE_*_URL（须为内网，勿填 *.up.railway.app）。
  * 本地未配置时默认 http://127.0.0.1:8000。
  */
