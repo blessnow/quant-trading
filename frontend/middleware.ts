@@ -12,8 +12,20 @@ export function middleware(request: NextRequest) {
     if (pathname === "/api/chat/send") {
       return NextResponse.next();
     }
-    const target = new URL(pathname + search, serverBackendBase());
-    return NextResponse.rewrite(target);
+    const baseStr = serverBackendBase().replace(/\/$/, "");
+    const baseForParse = baseStr.endsWith("/") ? baseStr : `${baseStr}/`;
+    const baseUrl = new URL(baseForParse);
+    const target = new URL(`${pathname}${search}`, baseUrl);
+
+    // rewrite 到内网时若不改 Host，后端仍收到前端公网 Host，BACKEND_PRIVATE_ONLY 会误判 → 404
+    const headers = new Headers(request.headers);
+    headers.set("host", target.host);
+    const origHost = request.headers.get("host");
+    if (origHost) {
+      headers.set("x-forwarded-host", origHost);
+    }
+
+    return NextResponse.rewrite(target, { request: { headers } });
   }
 
   return NextResponse.next();
