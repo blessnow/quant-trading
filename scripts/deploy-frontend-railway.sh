@@ -4,4 +4,5 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
-exec railway up -s quant-trading -c -m "CLI: frontend from monorepo root (${USER:-local})" "$@"
+# 勿在 -m 中写 $USER 等个人信息，会显示在 Railway 部署记录里
+exec railway up -s quant-trading -c -m "CLI: frontend deploy from monorepo root" "$@"
