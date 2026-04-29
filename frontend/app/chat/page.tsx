@@ -67,43 +67,91 @@ export default function ChatPage() {
     );
   }
 
-  // 加载策略列表
+  // 加载策略列表（避免非 JSON / 错误体导致 data.strategies 为 undefined 直接崩溃）
   useEffect(() => {
-    fetch("/api/chat/strategies")
-      .then((res) => res.json())
-      .then((data) => {
-        setStrategies(data.strategies);
-        if (data.strategies.length > 0) {
-          setCurrentStrategy(data.strategies[0]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/chat/strategies");
+        const raw = await res.text();
+        let data: { strategies?: Strategy[] } = {};
+        try {
+          data = raw ? (JSON.parse(raw) as { strategies?: Strategy[] }) : {};
+        } catch {
+          return;
         }
-      });
+        if (cancelled) return;
+        const list = Array.isArray(data.strategies) ? data.strategies : [];
+        setStrategies(list);
+        if (list.length > 0) setCurrentStrategy(list[0]);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 加载会话列表
   useEffect(() => {
-    fetch("/api/chat/sessions")
-      .then((res) => res.json())
-      .then((data) => {
-        setSessions(data.sessions);
-      })
-      .catch(() => {
-        // 未登录时不报错
-      });
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/chat/sessions");
+        const raw = await res.text();
+        let data: { sessions?: Session[] } = {};
+        try {
+          data = raw ? (JSON.parse(raw) as { sessions?: Session[] }) : {};
+        } catch {
+          return;
+        }
+        if (cancelled) return;
+        setSessions(Array.isArray(data.sessions) ? data.sessions : []);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 切换会话时加载消息
   useEffect(() => {
     if (isStreamingRef.current) return;
-    if (currentSession) {
-      fetch(`/api/chat/sessions/${currentSession.id}/messages`)
-        .then((res) => res.json())
-        .then((data) => {
-          setMessages(data.messages);
-        });
-    } else {
+    if (!currentSession) {
       setMessages([]);
+      return;
     }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat/sessions/${currentSession.id}/messages`);
+        const raw = await res.text();
+        let data: { messages?: Message[] } = {};
+        try {
+          data = raw ? (JSON.parse(raw) as { messages?: Message[] }) : {};
+        } catch {
+          if (!cancelled) setMessages([]);
+          return;
+        }
+        if (cancelled) return;
+        setMessages(Array.isArray(data.messages) ? data.messages : []);
+      } catch {
+        if (!cancelled) setMessages([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [currentSession]);
+
+  useEffect(() => {
+    return () => {
+      isStreamingRef.current = false;
+    };
+  }, []);
 
   // 滚动到底部
   useEffect(() => {
@@ -219,32 +267,41 @@ export default function ChatPage() {
     let localContent = "";
     let hasAssistantMsg = false;
 
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    const normalizeToolArgs = (a: unknown): Record<string, unknown> =>
+      a && typeof a === "object" && !Array.isArray(a)
+        ? (a as Record<string, unknown>)
+        : {};
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+    try {
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine || !trimmedLine.startsWith("data: ")) continue;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
 
-          const data = trimmedLine.slice(6);
-          if (data === "[DONE]") {
-            setIsLoading(false);
-            isStreamingRef.current = false;
-            return;
-          }
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine || !trimmedLine.startsWith("data: ")) continue;
 
-          try {
-            const event = JSON.parse(data);
+            const data = trimmedLine.slice(6);
+            if (data === "[DONE]") {
+              setIsLoading(false);
+              return;
+            }
 
-            if (event.type === "tool_call") {
-              // 添加到本地工具调用列表
-              localToolCalls.push({ name: event.name, args: event.args, result: undefined });
+            try {
+              const event = JSON.parse(data);
+
+              if (event.type === "tool_call") {
+                // 添加到本地工具调用列表（args 缺省或非对象时避免渲染崩溃）
+                localToolCalls.push({
+                  name: String(event.name ?? ""),
+                  args: normalizeToolArgs(event.args),
+                  result: undefined,
+                });
               // 立即更新 UI
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
@@ -295,25 +352,38 @@ export default function ChatPage() {
                   created_at: new Date().toISOString(),
                 }];
               });
-            } else if (event.type === "error") {
-              setIsLoading(false);
-              setMessages((prev) => [...prev, {
-                id: Date.now(),
-                role: "assistant",
-                content: `错误: ${event.content}`,
-                tool_calls: null,
-                created_at: new Date().toISOString(),
-              }]);
+              } else if (event.type === "error") {
+                setIsLoading(false);
+                setMessages((prev) => [...prev, {
+                  id: Date.now(),
+                  role: "assistant",
+                  content: `错误: ${event.content}`,
+                  tool_calls: null,
+                  created_at: new Date().toISOString(),
+                }]);
+              }
+            } catch (e) {
+              console.error("[SSE] parse error:", e);
             }
-          } catch (e) {
-            console.error("[SSE] parse error:", e);
           }
         }
       }
+    } catch (e) {
+      console.error("[SSE] read error:", e);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          role: "assistant",
+          content: "流式响应中断，请重试或刷新页面",
+          tool_calls: null,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+      isStreamingRef.current = false;
     }
-
-    setIsLoading(false);
-    isStreamingRef.current = false;
   };
 
   // 删除会话

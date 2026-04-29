@@ -19,7 +19,11 @@ const TOOL_NAMES: Record<string, string> = {
 };
 
 export default function ToolCallDisplay({ toolCall }: Props) {
-  const displayName = TOOL_NAMES[toolCall.name] || toolCall.name;
+  const displayName = TOOL_NAMES[toolCall.name] || toolCall.name || "工具";
+  const args =
+    toolCall.args && typeof toolCall.args === "object" && !Array.isArray(toolCall.args)
+      ? (toolCall.args as Record<string, unknown>)
+      : {};
 
   return (
     <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-sm">
@@ -29,9 +33,9 @@ export default function ToolCallDisplay({ toolCall }: Props) {
       </div>
 
       {/* 参数 */}
-      {Object.keys(toolCall.args).length > 0 && (
+      {Object.keys(args).length > 0 && (
         <div className="mt-2 text-xs text-white/50">
-          {Object.entries(toolCall.args).map(([k, v]) => (
+          {Object.entries(args).map(([k, v]) => (
             <span key={k} className="mr-3">
               {k}: <code className="bg-white/10 px-1.5 py-0.5 rounded text-white/70">{String(v)}</code>
             </span>
