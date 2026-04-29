@@ -296,6 +296,7 @@ export default function ChatPage() {
               const event = JSON.parse(data);
 
               if (event.type === "tool_call") {
+                setIsLoading(false);
                 // 添加到本地工具调用列表（args 缺省或非对象时避免渲染崩溃）
                 localToolCalls.push({
                   name: String(event.name ?? ""),
