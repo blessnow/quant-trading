@@ -10,14 +10,8 @@ from datetime import datetime
 from typing import AsyncGenerator, Optional
 
 import anthropic
-import pandas as pd
 from loguru import logger
 
-from data.a_share_provider import (
-    get_zt_pool, get_emotion_indicators, get_industry_board_ranking,
-    get_realtime_quotes, get_stock_history, get_current_price,
-    get_batch_prices, get_stock_fundamentals, get_pb_ratio, get_commodity_prices,
-)
 from data.market_status import CST
 from llm.chat_strategies import get_strategy, ChatStrategy
 from llm.prompts import SYSTEM_PROMPT as CHEN_XIAOQUN_SYSTEM
@@ -111,7 +105,7 @@ class ChatAgent:
             },
             "get_stock_info": {
                 "name": "get_stock_info",
-                "description": "查询个股详情：实时行情、近20日K线、量价关系等。",
+                "description": "查询个股实时价与近20日K线。一次回复里需要对比多只股票时，请并行发起多次本工具调用（后端会自动合并为批量行情）。",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -196,9 +190,7 @@ class ChatAgent:
         question: str,
         positions: list = None,
     ) -> AsyncGenerator[dict, None]:
-        """流式对话，yield SSE 事件"""
-        from duckduckgo_search import DDGS
-
+        """流式对话，yield SSE 事件（重依赖在各自工具内按需 import，避免每条消息加载 akshare 等）"""
         # 构建消息
         user_prompt = f"当前时间：{datetime.now(CST).strftime('%Y-%m-%d %H:%M')}\n\n用户问题：{question}"
         api_messages = [{"role": "user", "content": user_prompt}]
@@ -256,7 +248,7 @@ class ChatAgent:
                     # 执行工具
                     try:
                         logger.info(f"[ChatAgent] 开始执行工具: {merged_name}")
-                        result = self._execute_tool(merged_name, merged_args, DDGS)
+                        result = self._execute_tool(merged_name, merged_args)
                         logger.info(f"[ChatAgent] 工具 {merged_name} 返回 {len(result)} 字符")
                         yield {
                             "type": "tool_result",
@@ -324,6 +316,9 @@ class ChatAgent:
             elif name == "get_pb_ratio" and len(blocks) > 1:
                 codes = [b.input.get("code", "") for b in blocks if b.input.get("code")]
                 merged.append(("get_batch_pb_ratio", {"codes": codes}, blocks))
+            elif name == "get_stock_info" and len(blocks) > 1:
+                codes = [str(b.input.get("code", "")).strip() for b in blocks if b.input.get("code")]
+                merged.append(("get_batch_stock_info", {"codes": codes}, blocks))
             elif name == "search_web" and len(blocks) > 1:
                 # 合并多个搜索为一个批量搜索
                 queries = [b.input.get("query", "") for b in blocks if b.input.get("query")]
@@ -334,16 +329,18 @@ class ChatAgent:
         
         return merged
 
-    def _execute_tool(self, name: str, args: dict, DDGS) -> str:
+    def _execute_tool(self, name: str, args: dict) -> str:
         """执行工具"""
         if name == "search_web":
-            return self._tool_search_web(args.get("query", ""), DDGS)
+            return self._tool_search_web(args.get("query", ""))
         elif name == "batch_search_web":
-            return self._tool_batch_search_web(args.get("queries", []), DDGS)
+            return self._tool_batch_search_web(args.get("queries", []))
         elif name == "get_market_data":
             return self._tool_get_market_data()
         elif name == "get_stock_info":
             return self._tool_get_stock_info(args.get("code", ""))
+        elif name == "get_batch_stock_info":
+            return self._tool_get_batch_stock_info(args.get("codes", []))
         elif name == "get_positions":
             return self._tool_get_positions()
         elif name == "get_stock_fundamentals":
@@ -358,8 +355,8 @@ class ChatAgent:
             return self._tool_get_commodity_prices()
         return f"未知工具: {name}"
 
-    def _tool_search_web(self, query: str, DDGS) -> str:
-        """搜索网络获取新闻资讯，优先使用 akshare 新闻接口"""
+    def _tool_search_web(self, query: str) -> str:
+        """搜索网络获取新闻资讯，优先使用 akshare 新闻接口（按需加载 akshare）"""
         import akshare as ak
         from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
@@ -403,11 +400,11 @@ class ChatAgent:
         except Exception as e:
             return f"搜索失败: {e}"
 
-    def _tool_batch_search_web(self, queries: list, DDGS) -> str:
+    def _tool_batch_search_web(self, queries: list) -> str:
         """并行执行多个搜索查询"""
         def search_one(query):
             try:
-                return query, self._tool_search_web(query, DDGS)
+                return query, self._tool_search_web(query)
             except Exception as e:
                 return query, f"搜索失败: {e}"
 
@@ -415,6 +412,10 @@ class ChatAgent:
         return json.dumps(results, ensure_ascii=False)
 
     def _tool_get_market_data(self) -> str:
+        import pandas as pd
+        from data.a_share_provider import (
+            get_zt_pool, get_emotion_indicators, get_industry_board_ranking,
+        )
         zt_pool = get_zt_pool()
         emotion = get_emotion_indicators(zt_pool=zt_pool, quotes=None)
         
@@ -449,13 +450,48 @@ class ChatAgent:
         return json.dumps(result, ensure_ascii=False)
 
     def _tool_get_stock_info(self, code: str) -> str:
+        """单股：价格与 K 线并行拉取，避免串行两次网络"""
+        from concurrent.futures import ThreadPoolExecutor
+        from data.a_share_provider import get_current_price, get_stock_history
+
         code = str(code).strip()
-        price = get_current_price(code)
-        hist = get_stock_history(code, days=20)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fut_p = pool.submit(get_current_price, code)
+            fut_h = pool.submit(get_stock_history, code, 20)
+            price = fut_p.result()
+            hist = fut_h.result()
 
+        return self._format_stock_info_payload(code, price, hist)
+
+    def _tool_get_batch_stock_info(self, codes: list) -> str:
+        """多股：批量取现价（一次新浪 HTTP），K 线并行"""
+        import pandas as pd
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from data.a_share_provider import get_batch_prices, get_stock_history
+
+        codes = [str(c).strip() for c in (codes or []) if c][:15]
+        if not codes:
+            return "{}"
+        prices = get_batch_prices(codes)
+        hists: dict = {}
+        with ThreadPoolExecutor(max_workers=min(8, len(codes))) as ex:
+            futs = {ex.submit(get_stock_history, c, 20): c for c in codes}
+            for fut in as_completed(futs):
+                c = futs[fut]
+                try:
+                    hists[c] = fut.result()
+                except Exception:
+                    hists[c] = pd.DataFrame()
+
+        out = {}
+        for c in codes:
+            out[c] = json.loads(self._format_stock_info_payload(c, prices.get(c), hists.get(c)))
+        return json.dumps(out, ensure_ascii=False)
+
+    @staticmethod
+    def _format_stock_info_payload(code: str, price, hist) -> str:
         result = {"code": code, "current_price": price, "history": []}
-
-        if not hist.empty:
+        if hist is not None and not hist.empty:
             for _, r in hist.tail(20).iterrows():
                 result["history"].append({
                     "open": float(r.get("open", 0)) if "open" in r.index else 0,
@@ -464,7 +500,6 @@ class ChatAgent:
                     "low": float(r.get("low", 0)) if "low" in r.index else 0,
                     "volume": float(r.get("volume", 0)) if "volume" in r.index else 0,
                 })
-
         return json.dumps(result, ensure_ascii=False)
 
     def _tool_get_positions(self) -> str:
@@ -483,6 +518,8 @@ class ChatAgent:
         return "\n".join(lines)
 
     def _tool_get_stock_fundamentals(self, code: str) -> str:
+        from data.a_share_provider import get_stock_fundamentals
+
         code = str(code).strip()
         data = get_stock_fundamentals(code)
         if "financials" in data and isinstance(data["financials"], list):
@@ -491,6 +528,8 @@ class ChatAgent:
 
     def _tool_get_batch_fundamentals(self, codes: list) -> str:
         """并行获取多只股票的基本面数据"""
+        from data.a_share_provider import get_stock_fundamentals
+
         def fetch_one(code):
             try:
                 data = get_stock_fundamentals(str(code).strip())
@@ -504,12 +543,16 @@ class ChatAgent:
         return json.dumps(results, ensure_ascii=False, default=str)[:8000]
 
     def _tool_get_pb_ratio(self, code: str) -> str:
+        from data.a_share_provider import get_pb_ratio
+
         code = str(code).strip()
         data = get_pb_ratio(code)
         return json.dumps(data, ensure_ascii=False, default=str)
 
     def _tool_get_batch_pb_ratio(self, codes: list) -> str:
         """并行获取多只股票的估值数据"""
+        from data.a_share_provider import get_pb_ratio
+
         def fetch_one(code):
             try:
                 return code, get_pb_ratio(str(code).strip())
@@ -520,5 +563,7 @@ class ChatAgent:
         return json.dumps(results, ensure_ascii=False, default=str)[:4000]
 
     def _tool_get_commodity_prices(self) -> str:
+        from data.a_share_provider import get_commodity_prices
+
         data = get_commodity_prices()
         return json.dumps(data, ensure_ascii=False, default=str)

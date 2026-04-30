@@ -347,10 +347,14 @@ async def sell_a_share_pending():
         ) as cur:
             pending = await cur.fetchall()
 
+        if pending:
+            from data.a_share_provider import get_batch_prices
+            symbols = [p[2] for p in pending]
+            price_map = get_batch_prices(symbols)
+
         for p in pending:
             pos_id, strategy_id, symbol, name, shares, avg_cost = p
-            from data.a_share_provider import get_current_price
-            price = get_current_price(symbol)
+            price = price_map.get(symbol)
             if not price:
                 logger.warning(f"[A股卖出] 无法获取 {symbol} 价格，跳过")
                 continue
@@ -387,13 +391,25 @@ async def update_positions_realtime(market: str):
             codes = [r[1] for r in rows]
             prices = get_batch_prices(codes)
         else:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
             from data.us_stock_provider import get_current_price
+
+            symbols = [r[1] for r in rows]
             prices = {}
-            for r in rows:
-                symbol = r[1]
-                price = get_current_price(symbol)
-                if price:
-                    prices[symbol] = price
+
+            def _us_price(sym: str):
+                try:
+                    p = get_current_price(sym)
+                    return sym, p if p and p > 0 else None
+                except Exception:
+                    return sym, None
+
+            with ThreadPoolExecutor(max_workers=min(8, len(symbols))) as ex:
+                futs = [ex.submit(_us_price, s) for s in symbols]
+                for fut in as_completed(futs):
+                    sym, p = fut.result()
+                    if p:
+                        prices[sym] = p
 
         updated = 0
         for r in rows:
