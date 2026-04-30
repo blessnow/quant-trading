@@ -38,6 +38,8 @@ RISK_PORTFOLIO_DRAWDOWN_LIMIT = 0.15 # 组合最大回撤
 RISK_MAX_POSITION_PCT = 0.25         # 单仓位最大占比
 RISK_MAX_POSITIONS = 20              # 最大持仓数
 RISK_MIN_CASH_RESERVE = 0.10         # 最低现金储备比例
+RISK_DEFAULT_STOP_LOSS_PCT = -8.0    # 默认止损百分比（负数）
+RISK_DEFAULT_TAKE_PROFIT_PCT = 15.0  # 默认止盈百分比（正数）
 
 # 通知配置
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")

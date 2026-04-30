@@ -256,7 +256,8 @@ async def strategy_positions(strategy_id: int, authorization: Optional[str] = He
     db = await get_db()
     try:
         async with db.execute("""
-            SELECT id, symbol, market, name, shares, avg_cost, current_price, buy_date, sellable_date
+            SELECT id, symbol, market, name, shares, avg_cost, current_price, buy_date, sellable_date,
+                   stop_loss_pct, take_profit_pct
             FROM positions WHERE strategy_id=?
         """, (strategy_id,)) as cur:
             rows = await cur.fetchall()
@@ -272,6 +273,8 @@ async def strategy_positions(strategy_id: int, authorization: Optional[str] = He
                 "shares": shares, "avg_cost": avg_cost, "current_price": current_price,
                 "unrealized_pnl": round(unrealized_pnl, 2), "unrealized_pnl_pct": round(unrealized_pnl_pct, 4),
                 "market_value": round(market_value, 2), "buy_date": r[7], "sellable_date": r[8],
+                "stop_loss_pct": r[9] if r[9] is not None else -8.0,
+                "take_profit_pct": r[10] if r[10] is not None else 15.0,
             })
         return {"positions": positions, "count": len(positions)}
     finally:
@@ -306,5 +309,133 @@ async def strategy_trades(strategy_id: int, limit: int = 20, offset: int = 0, au
                 "commission": r[8], "pnl": r[9], "executed_at": r[10],
             })
         return {"trades": trades, "total": total, "has_more": offset + len(trades) < total}
+    finally:
+        await db.close()
+
+
+class RiskParamsRequest(BaseModel):
+    stop_loss_pct: Optional[float] = None
+    take_profit_pct: Optional[float] = None
+
+
+@router.put("/{strategy_id}/positions/{position_id}/risk-params")
+async def update_position_risk_params(
+    strategy_id: int,
+    position_id: int,
+    req: RiskParamsRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """更新单个持仓的止损止盈参数"""
+    await require_member(authorization)
+    db = await get_db()
+    try:
+        # 验证持仓属于该策略
+        async with db.execute(
+            "SELECT id FROM positions WHERE id=? AND strategy_id=?",
+            (position_id, strategy_id)
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="持仓不存在或不属于该策略")
+
+        # 验证参数范围
+        if req.stop_loss_pct is not None:
+            if req.stop_loss_pct > 0 or req.stop_loss_pct < -50:
+                raise HTTPException(status_code=400, detail="止损百分比应为负数且在-50%以内")
+        if req.take_profit_pct is not None:
+            if req.take_profit_pct < 0 or req.take_profit_pct > 100:
+                raise HTTPException(status_code=400, detail="止盈百分比应为正数且在100%以内")
+
+        # 更新
+        updates = []
+        values = []
+        if req.stop_loss_pct is not None:
+            updates.append("stop_loss_pct=?")
+            values.append(req.stop_loss_pct)
+        if req.take_profit_pct is not None:
+            updates.append("take_profit_pct=?")
+            values.append(req.take_profit_pct)
+        if updates:
+            values.append(position_id)
+            await db.execute(
+                f"UPDATE positions SET {', '.join(updates)}, updated_at=datetime('now') WHERE id=?",
+                values
+            )
+            await db.commit()
+
+        # 返回更新后的持仓
+        async with db.execute(
+            "SELECT id, symbol, market, name, shares, avg_cost, current_price, stop_loss_pct, take_profit_pct "
+            "FROM positions WHERE id=?",
+            (position_id,)
+        ) as cur:
+            pos = await cur.fetchone()
+
+        return {
+            "success": True,
+            "position": {
+                "id": pos[0], "symbol": pos[1], "market": pos[2], "name": pos[3],
+                "shares": pos[4], "avg_cost": pos[5], "current_price": pos[6],
+                "stop_loss_pct": pos[7] or -8.0, "take_profit_pct": pos[8] or 15.0,
+            }
+        }
+    finally:
+        await db.close()
+
+
+@router.put("/{strategy_id}/risk-params")
+async def update_strategy_risk_params(
+    strategy_id: int,
+    req: RiskParamsRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """批量更新策略下所有持仓的止损止盈参数"""
+    await require_member(authorization)
+    db = await get_db()
+    try:
+        # 验证策略存在
+        async with db.execute("SELECT id FROM strategies WHERE id=?", (strategy_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="策略不存在")
+
+        # 验证参数范围
+        if req.stop_loss_pct is not None:
+            if req.stop_loss_pct > 0 or req.stop_loss_pct < -50:
+                raise HTTPException(status_code=400, detail="止损百分比应为负数且在-50%以内")
+        if req.take_profit_pct is not None:
+            if req.take_profit_pct < 0 or req.take_profit_pct > 100:
+                raise HTTPException(status_code=400, detail="止盈百分比应为正数且在100%以内")
+
+        # 更新所有持仓
+        updates = []
+        values = []
+        if req.stop_loss_pct is not None:
+            updates.append("stop_loss_pct=?")
+            values.append(req.stop_loss_pct)
+        if req.take_profit_pct is not None:
+            updates.append("take_profit_pct=?")
+            values.append(req.take_profit_pct)
+        if updates:
+            values.append(strategy_id)
+            await db.execute(
+                f"UPDATE positions SET {', '.join(updates)}, updated_at=datetime('now') WHERE strategy_id=?",
+                values
+            )
+            await db.commit()
+
+        # 返回更新后的持仓数量
+        async with db.execute(
+            "SELECT COUNT(*) FROM positions WHERE strategy_id=?", (strategy_id,)
+        ) as cur:
+            count = await cur.fetchone()
+
+        return {
+            "success": True,
+            "strategy_id": strategy_id,
+            "updated_count": count[0] if count else 0,
+            "stop_loss_pct": req.stop_loss_pct,
+            "take_profit_pct": req.take_profit_pct,
+        }
     finally:
         await db.close()

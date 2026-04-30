@@ -79,9 +79,10 @@ class PaperBroker:
 
                 # 记录持仓
                 await db.execute(
-                    """INSERT INTO positions (strategy_id, symbol, market, name, shares, avg_cost, buy_date, sellable_date, current_price)
-                       VALUES (?, ?, 'A_SHARE', ?, ?, ?, ?, ?, ?)""",
-                    (signal.strategy_id, signal.symbol, signal.name, shares, price, today, sellable_date, price)
+                    """INSERT INTO positions (strategy_id, symbol, market, name, shares, avg_cost, buy_date, sellable_date, current_price, stop_loss_pct, take_profit_pct)
+                       VALUES (?, ?, 'A_SHARE', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (signal.strategy_id, signal.symbol, signal.name, shares, price, today, sellable_date, price,
+                     config.RISK_DEFAULT_STOP_LOSS_PCT, config.RISK_DEFAULT_TAKE_PROFIT_PCT)
                 )
 
                 # 记录交易
@@ -195,9 +196,10 @@ class PaperBroker:
                 )
 
                 await db.execute(
-                    """INSERT INTO positions (strategy_id, symbol, market, name, shares, avg_cost, buy_date, sellable_date, current_price)
-                       VALUES (?, ?, 'US_STOCK', ?, ?, ?, ?, ?, ?)""",
-                    (signal.strategy_id, signal.symbol, signal.name, shares, price, today, today, price)
+                    """INSERT INTO positions (strategy_id, symbol, market, name, shares, avg_cost, buy_date, sellable_date, current_price, stop_loss_pct, take_profit_pct)
+                       VALUES (?, ?, 'US_STOCK', ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (signal.strategy_id, signal.symbol, signal.name, shares, price, today, today, price,
+                     config.RISK_DEFAULT_STOP_LOSS_PCT, config.RISK_DEFAULT_TAKE_PROFIT_PCT)
                 )
 
                 await db.execute(

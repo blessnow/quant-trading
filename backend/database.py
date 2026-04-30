@@ -77,6 +77,8 @@ CREATE TABLE IF NOT EXISTS positions (
     buy_date    TEXT NOT NULL,
     sellable_date TEXT NOT NULL,
     current_price REAL,
+    stop_loss_pct REAL DEFAULT -8.0,
+    take_profit_pct REAL DEFAULT 15.0,
     updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (strategy_id) REFERENCES strategies(id)
 );
@@ -376,6 +378,15 @@ async def init_db():
             await db.execute("ALTER TABLE users ADD COLUMN last_login_at TEXT")
             await db.commit()
             logging.info("[数据库] users 表迁移完成：新增 last_login_at 列")
+
+        try:
+            async with db.execute("SELECT stop_loss_pct FROM positions LIMIT 1") as cur:
+                await cur.fetchone()
+        except aiosqlite.OperationalError:
+            await db.execute("ALTER TABLE positions ADD COLUMN stop_loss_pct REAL DEFAULT -8.0")
+            await db.execute("ALTER TABLE positions ADD COLUMN take_profit_pct REAL DEFAULT 15.0")
+            await db.commit()
+            logging.info("[数据库] positions 表迁移完成：新增 stop_loss_pct/take_profit_pct 列")
 
         logging.info("[数据库] 初始化完成")
     finally:

@@ -424,7 +424,9 @@ async def _check_position_for_sell(
     shares: float,
     avg_cost: float,
     cur_price: float,
-    sellable: bool = True
+    sellable: bool = True,
+    stop_loss_pct: float = -8.0,
+    take_profit_pct: float = 15.0,
 ):
     """检查单个持仓是否需要卖出"""
     if avg_cost <= 0 or cur_price <= 0:
@@ -435,12 +437,12 @@ async def _check_position_for_sell(
     should_sell = False
     reason = ""
 
-    if pnl_pct <= -8:
+    if pnl_pct <= stop_loss_pct:
         should_sell = True
-        reason = f"止损 {pnl_pct:.1f}%"
-    elif pnl_pct >= 15 and sellable:
+        reason = f"止损 {pnl_pct:.1f}% (阈值{stop_loss_pct:.1f}%)"
+    elif pnl_pct >= take_profit_pct and sellable:
         should_sell = True
-        reason = f"止盈 {pnl_pct:.1f}%"
+        reason = f"止盈 {pnl_pct:.1f}% (阈值{take_profit_pct:.1f}%)"
 
     if should_sell and sellable:
         logger.info(f"[持仓监控] {symbol} {reason}，触发卖出")
@@ -466,16 +468,19 @@ async def monitor_positions():
         today_a = get_today_str("A_SHARE")
         async with db.execute(
             """SELECT p.id, p.strategy_id, p.symbol, p.market, p.name, p.shares,
-                      p.avg_cost, p.current_price, p.sellable_date
+                      p.avg_cost, p.current_price, p.sellable_date, p.stop_loss_pct, p.take_profit_pct
                FROM positions p WHERE p.market='A_SHARE' AND p.current_price IS NOT NULL"""
         ) as cur:
             a_rows = await cur.fetchall()
 
         for r in a_rows:
-            pos_id, strategy_id, symbol, market, name, shares, avg_cost, cur_price, sellable_date = r
+            pos_id, strategy_id, symbol, market, name, shares, avg_cost, cur_price, sellable_date, stop_loss_pct, take_profit_pct = r
             sellable = (sellable_date or "") <= today_a
             trade = await _check_position_for_sell(
-                strategy_id, symbol, market, name, shares, avg_cost, cur_price, sellable
+                strategy_id, symbol, market, name, shares, avg_cost, cur_price,
+                sellable=sellable,
+                stop_loss_pct=stop_loss_pct if stop_loss_pct is not None else -8.0,
+                take_profit_pct=take_profit_pct if take_profit_pct is not None else 15.0,
             )
             if trade:
                 logger.info(f"[持仓监控] {symbol} 卖出成交")
@@ -483,15 +488,18 @@ async def monitor_positions():
         # 美股：T+0 随时可卖
         async with db.execute(
             """SELECT p.id, p.strategy_id, p.symbol, p.market, p.name, p.shares,
-                      p.avg_cost, p.current_price
+                      p.avg_cost, p.current_price, p.stop_loss_pct, p.take_profit_pct
                FROM positions p WHERE p.market='US_STOCK' AND p.current_price IS NOT NULL"""
         ) as cur:
             us_rows = await cur.fetchall()
 
         for r in us_rows:
-            pos_id, strategy_id, symbol, market, name, shares, avg_cost, cur_price = r
+            pos_id, strategy_id, symbol, market, name, shares, avg_cost, cur_price, stop_loss_pct, take_profit_pct = r
             trade = await _check_position_for_sell(
-                strategy_id, symbol, market, name, shares, avg_cost, cur_price, sellable=True
+                strategy_id, symbol, market, name, shares, avg_cost, cur_price,
+                sellable=True,
+                stop_loss_pct=stop_loss_pct if stop_loss_pct is not None else -8.0,
+                take_profit_pct=take_profit_pct if take_profit_pct is not None else 15.0,
             )
             if trade:
                 logger.info(f"[持仓监控] {symbol} 卖出成交")
