@@ -208,8 +208,11 @@ export function PositionsList({ strategyId, initialPositions }: { strategyId: nu
 
   const startEdit = (p: Position) => {
     setEditingId(p.id);
-    setEditStopLoss(String(p.stop_loss_pct));
-    setEditTakeProfit(String(p.take_profit_pct));
+    const sl = p.stop_loss_pct != null ? p.stop_loss_pct : -8;
+    const tp = p.take_profit_pct != null ? p.take_profit_pct : 15;
+    setEditStopLoss(String(sl));
+    setEditTakeProfit(String(tp));
+    console.log("startEdit", p.id, sl, tp);
   };
 
   const cancelEdit = () => {
@@ -277,7 +280,7 @@ export function PositionsList({ strategyId, initialPositions }: { strategyId: nu
           const isEditing = editingId === p.id;
 
           return (
-            <div key={p.id} className="border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors">
+            <div key={p.id} className="border border-gray-100 rounded-xl p-4 hover:border-gray-200 transition-colors relative" onClick={() => { if (editingId === p.id) cancelEdit(); }}>
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <span className="font-mono font-semibold text-[#1a1a2e]">{p.symbol}</span>
@@ -314,28 +317,28 @@ export function PositionsList({ strategyId, initialPositions }: { strategyId: nu
                   <span>市值 ¥{fmt(p.market_value)}</span>
                   <span>持有 {holdDays(p.buy_date)}天</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                   {isEditing ? (
-                    <>
+                    <div key={p.id} className="flex items-center gap-2">
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-gray-400">止损</span>
                         <input
-                          type="number"
-                          value={editStopLoss}
+                          key={`sl-${p.id}`}
+                          type="text"
+                          defaultValue={editStopLoss}
                           onChange={(e) => setEditStopLoss(e.target.value)}
-                          className="w-16 px-1.5 py-1 text-xs border border-gray-200 rounded"
-                          step="0.5"
+                          className="w-16 px-1.5 py-1 text-xs text-gray-800 border border-gray-200 rounded bg-white"
                         />
                         <span className="text-xs text-gray-400">%</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-gray-400">止盈</span>
                         <input
-                          type="number"
-                          value={editTakeProfit}
+                          key={`tp-${p.id}`}
+                          type="text"
+                          defaultValue={editTakeProfit}
                           onChange={(e) => setEditTakeProfit(e.target.value)}
-                          className="w-16 px-1.5 py-1 text-xs border border-gray-200 rounded"
-                          step="0.5"
+                          className="w-16 px-1.5 py-1 text-xs text-gray-800 border border-gray-200 rounded bg-white"
                         />
                         <span className="text-xs text-gray-400">%</span>
                       </div>
@@ -352,7 +355,7 @@ export function PositionsList({ strategyId, initialPositions }: { strategyId: nu
                       >
                         取消
                       </button>
-                    </>
+                    </div>
                   ) : (
                     <button
                       onClick={() => startEdit(p)}
