@@ -4,7 +4,5 @@
 # 后端 BACKEND_PRIVATE_ONLY=true（微信回调等见 backend/.env.example）
 
 [deploy]
-healthcheckPath = "/api/health"
-healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 10
