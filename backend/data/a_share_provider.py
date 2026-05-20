@@ -31,6 +31,9 @@ RETRY_DELAY = 3
 _history_cache: dict[str, pd.DataFrame] = {}
 _code_list_cache: list[str] | None = None
 _cache_lock = threading.Lock()
+_quotes_cache: pd.DataFrame | None = None
+_quotes_cache_ts: float = 0.0
+_QUOTES_TTL = 180  # 行情缓存 3 分钟，同一调度周期多方调用共用一次拉取
 CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 CODE_LIST_FILE = CACHE_DIR / "a_share_codes.csv"
 
@@ -111,6 +114,11 @@ def _parse_sina_hq_line(line: str) -> dict | None:
 
 
 def get_realtime_quotes() -> pd.DataFrame:
+    global _quotes_cache, _quotes_cache_ts
+    with _cache_lock:
+        if _quotes_cache is not None and (time.time() - _quotes_cache_ts) < _QUOTES_TTL:
+            return _quotes_cache.copy()
+
     codes = get_all_codes()
     if not codes:
         return pd.DataFrame()
@@ -140,7 +148,10 @@ def get_realtime_quotes() -> pd.DataFrame:
     df["turnover_rate"] = 0.0
     df["circ_mv_yi"] = 0.0
     logger.info(f"[A股行情] 获取 {len(df)} 只股票实时行情")
-    return df
+    with _cache_lock:
+        _quotes_cache = df
+        _quotes_cache_ts = time.time()
+    return df.copy()
 
 
 def get_stock_history(code: str, days: int = 30) -> pd.DataFrame:

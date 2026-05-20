@@ -2,3 +2,9 @@
 #
 # 建议：后端关闭 Public Networking；前端 BACKEND_URL 用控制台私网地址（端口=后端 PORT，勿默认 :8000）
 # 后端 BACKEND_PRIVATE_ONLY=true（微信回调等见 backend/.env.example）
+
+[deploy]
+healthcheckPath = "/api/health"
+healthcheckTimeout = 60
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
