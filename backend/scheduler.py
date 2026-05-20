@@ -583,9 +583,9 @@ def setup_jobs():
         args=["MultiFactorDaily"],
         id="a_share_multi_factor", replace_existing=True, misfire_grace_time=300,
     )
-    # 盘中高频扫描（每10分钟）— 涨停预判
+    # 盘中扫描（每小时）— 涨停预判
     scheduler.add_job(
-        run_strategy, "cron", minute="*/10", hour="9-14", timezone=CST, day_of_week="mon-fri",
+        run_strategy, "cron", minute="0", hour="9-14", timezone=CST, day_of_week="mon-fri",
         args=["LimitUpPredictor"],
         id="a_share_limit_up", replace_existing=True, misfire_grace_time=60,
     )
@@ -595,9 +595,9 @@ def setup_jobs():
         args=["EventArbitrage"],
         id="a_share_event", replace_existing=True, misfire_grace_time=120,
     )
-    # 陈小群短线龙头 — 盘中快速扫描（每10分钟）
+    # 陈小群短线龙头 — 盘中扫描（每小时）
     scheduler.add_job(
-        run_strategy, "cron", minute="*/10", hour="9-14", timezone=CST, day_of_week="mon-fri",
+        run_strategy, "cron", minute="30", hour="9-14", timezone=CST, day_of_week="mon-fri",
         args=["ChenXiaoqunShort"],
         id="chen_xiaoqun_intraday", replace_existing=True, misfire_grace_time=120,
     )
